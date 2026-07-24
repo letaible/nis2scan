@@ -386,3 +386,32 @@ Verlaufsabschnitte (Batches Nr. 4–10) und der Kampagnen-Bilanz.
   Seitennavigation.
 - **Gründer-Vermerk: ERTEILT (Chat-Freigabe 24.07.2026 „Vermerk erteilt,
   Tag frei").** Beide ADR-0018-Vermerke liegen vor — Merge frei.
+
+#### Vorsorge-Review SaaS-UI-Texte — Vladis Review-Runden 1-3 (2026-07-25)
+
+- Gegenstand (Repo `nis2scan-saas`, Branch `ui/vladi-review-fixes`):
+  Neue/geänderte deutsche UI-Bedientexte des SaaS-Frontends, die
+  Compliance-Sachverhalte einordnen — Fehler-Banner samt
+  CHECK_ERROR_GUIDANCE_DE und Fehlermeldungs-Anzeige (Engine-Schema 1.2.0),
+  „Keine Mängel bewertbar"-Hinweis, Umgebungskontext-Texte,
+  Prüfgrenzen-Fußnote, PDF-Upsell-Tooltip, Backend-503-Texte,
+  Einladungs-Hinweis sowie Korrektur der BSIG-§30-Kurztitel in Frontend
+  und e2e-Seed auf die rechtsgeprüften title_de aus bsig_30.py (die
+  Alt-Titel wie „Cyberhygiene und Schulungen" für Nr. 7 waren frei
+  formuliert). Einordnung des Koordinators: UI-Bedientexte, kein
+  Mapping/Check/Reporttext — Review vorsorglich nach dem Geist von
+  ADR-0018.
+- **Zweitprüfung (legal-reviewer): FAIL → 1 Auflage → umgesetzt →
+  Nachprüfung PASS.** Auflage: e2e-Seed Nr. 3 „Aufrechterhaltung des
+  Betriebs (BCM)" → exakt title_de „Aufrechterhaltung des Betriebs"
+  (Seed-area_name landet als Anzeige-Titel in Dashboard/Compliance/
+  Scan-Detail). Nachprüfung bestätigt 10/10 Titel-Treue in allen drei
+  Fundstellen (Frontend-Fallback, Scan-Dialog, Seed). Nicht sperrender
+  Hinweis: Das Check-Feld pruefgrenzen wird durch diese Runde erstmals
+  Endnutzern direkt angezeigt — bei der nächsten Mapping-/Check-Änderung
+  explizit unter das ADR-0018-Gate nehmen.
+- **Gründer-Vermerk: nicht eingeholt** (UI-Bedientexte außerhalb des
+  formalen Gate-Umfangs; Texte entstanden auf direkte Gründer-Befunde der
+  Live-UI-Session 24.07.2026 und wurden dort per Hot-Reload mitverfolgt).
+  Sollte der Gründer UI-Texte künftig dem formalen Gate unterstellen,
+  gilt das ab dann auch für diese Kategorie.
