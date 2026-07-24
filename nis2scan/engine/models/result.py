@@ -13,7 +13,7 @@ from nis2scan.engine.models.finding import Finding
 # From here on SemVer evolution rules apply — minors are strictly additive,
 # breaking changes require a major bump with a documented migration path.
 # History: docs/schema-changelog.md.
-SCHEMA_VERSION = "1.1.0"
+SCHEMA_VERSION = "1.2.0"
 
 
 class Erfuellungsgrad(StrEnum):
@@ -37,6 +37,11 @@ class CheckOutcomeEntry(BaseModel):
     bsig_30_nr: int = Field(ge=1, le=10)
     outcome: CheckOutcome
     error_count: int = 0
+    # Messages of the CheckErrors behind error_count (additive, schema 1.2.0).
+    # Without them a user only sees THAT a check errored, never WHY — the
+    # number-one avoidable support question. Raw exception strings; the
+    # EXTERN profile drops them (they may embed identifiers no finding names).
+    error_messages: list[str] = Field(default_factory=list)
     duration_ms: int = 0
     # Known limitations of the check, printed next to the result (ADR-0016
     # rule 2: "geprüft wurde X, nicht Y"). German, None until documented.

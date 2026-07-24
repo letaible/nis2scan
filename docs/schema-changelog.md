@@ -84,3 +84,15 @@ Dedizierte Schema-Review-Session (ADR-0021) gegen die Phase-2-Bedürfnisse
 Basis: Outcome-Modell (ADR-0007), Positivnachweise (ADR-0006),
 Erfüllungsgrad (ADR-0008), `finding_key` (ADR-0010), Prüfgrenzen und
 NA-Transparenz (ADR-0016), Rechtsstand-Versionierung (ADR-0013).
+
+## 1.2.0 (2026-07-24)
+
+Additiv (ADR-0021, Minor):
+
+- `CheckOutcomeEntry.error_messages: list[str]` (Default `[]`) — die
+  Meldungen der CheckErrors hinter `error_count`. Bisher war nur sichtbar,
+  DASS ein Check fehlschlug, nie WARUM (häufigste vermeidbare
+  Support-Anfrage). Im EXTERN-Profil wird die Liste geleert
+  (rohe Exception-Strings können Bezeichner enthalten, die in keinem
+  Finding vorkommen und daher nicht pseudonymisiert werden können);
+  `error_count` bleibt erhalten.

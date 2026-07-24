@@ -129,6 +129,7 @@ async def run_scan(
                 bsig_30_nr=check.bsig_30_nr,
                 outcome=outcome,
                 error_count=len(result.errors),
+                error_messages=[e.message for e in result.errors],
                 duration_ms=result.duration_ms,
                 pruefgrenzen=check.pruefgrenzen,
             )

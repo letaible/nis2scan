@@ -127,6 +127,13 @@ def pseudonymize_result(result: ScanResult) -> ScanResult:
     if pseudonymized.config.exceptions_path:
         pseudonymized.config.exceptions_path = Path(pseudonymized.config.exceptions_path).name
 
+    # CheckError messages are raw exception strings and may embed resource
+    # identifiers that never appear in any finding — the finding-based
+    # identifier collection below cannot scrub them. The EXTERN profile
+    # therefore drops the messages entirely; error_count stays informative.
+    for entry in pseudonymized.check_outcomes:
+        entry.error_messages = []
+
     for finding in pseudonymized.findings:
         identifiers = sorted(_collect_identifiers(finding), key=len, reverse=True)
         mapping = [(raw, _pseudonym(raw, secret)) for raw in identifiers]
