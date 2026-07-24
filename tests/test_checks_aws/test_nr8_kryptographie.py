@@ -154,6 +154,64 @@ class TestCheckS3DefaultEncryption:
         assert bucket_findings == []
         assert any(e.error_type == "UnverifiableState" and "test-emptyrules" in e.message for e in result.errors)
 
+    @mock_aws
+    def test_paginated_bucket_list_evaluates_all_pages(self):
+        # FIX3: list_buckets() is not guaranteed to return every bucket in a
+        # single response (AWS paginates via ContinuationToken). A bare
+        # list_buckets() call would silently skip buckets past the first
+        # page. moto does not implement ListBuckets ContinuationToken
+        # semantics, so the paginator is stubbed directly with two pages.
+        session = _make_session()
+        real_s3 = session.client("s3")
+        real_s3.create_bucket(
+            Bucket="bucket-page1",
+            CreateBucketConfiguration={"LocationConstraint": "eu-central-1"},
+        )
+        real_s3.create_bucket(
+            Bucket="bucket-page2",
+            CreateBucketConfiguration={"LocationConstraint": "eu-central-1"},
+        )
+        real_s3.put_bucket_encryption(
+            Bucket="bucket-page2",
+            ServerSideEncryptionConfiguration={
+                "Rules": [{"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}}]
+            },
+        )
+
+        fake_paginator = MagicMock()
+        fake_paginator.paginate.return_value = [
+            {"Buckets": [{"Name": "bucket-page1"}]},
+            {"Buckets": [{"Name": "bucket-page2"}]},
+        ]
+
+        real_get_paginator = real_s3.get_paginator
+
+        def get_paginator(operation_name):
+            if operation_name == "list_buckets":
+                return fake_paginator
+            return real_get_paginator(operation_name)
+
+        real_s3.get_paginator = get_paginator  # type: ignore[method-assign]
+
+        real_client = session.client
+
+        def client(service: str, region: str | None = None):
+            if service == "s3":
+                return real_s3
+            return real_client(service, region=region)
+
+        session.client = client  # type: ignore[method-assign]
+
+        check = CheckS3DefaultEncryption()
+        result = asyncio.run(check.execute(session))
+
+        unencrypted = [f for f in result.findings if "bucket-page1" in f.resource_id]
+        encrypted = [f for f in result.findings if "bucket-page2" in f.resource_id]
+        assert len(unencrypted) == 1
+        assert unencrypted[0].status == FindingStatus.NON_COMPLIANT
+        assert len(encrypted) == 1
+        assert encrypted[0].status == FindingStatus.COMPLIANT
+
 
 class TestCheckEbsEncryption:
     """Tests for EBS volume encryption check."""
@@ -339,6 +397,38 @@ class TestCheckKmsKeyRotation:
         result = asyncio.run(check.execute(session))
 
         assert len(result.findings) == 0
+
+    @mock_aws
+    def test_asymmetric_key_produces_no_finding(self):
+        # AWS-NR8-004 fix: asymmetric (and HMAC) keys do not support automatic
+        # rotation the same way symmetric keys do. GetKeyRotationStatus returns
+        # KeyRotationEnabled=false for them instead of erroring — evaluating
+        # that as a defect would be a false positive. Such keys must be
+        # skipped entirely (KeySpec != SYMMETRIC_DEFAULT).
+        session = _make_session()
+        kms = session.client("kms", region="eu-central-1")
+        kms.create_key(Description="asym-key", KeySpec="RSA_2048", KeyUsage="SIGN_VERIFY")
+
+        check = CheckKmsKeyRotation()
+        result = asyncio.run(check.execute(session))
+
+        assert result.findings == []
+        assert result.errors == []
+
+    @mock_aws
+    def test_symmetric_key_still_evaluated_alongside_asymmetric(self):
+        # Guard against an overly broad filter that would also skip
+        # legitimate symmetric keys once an asymmetric key is present.
+        session = _make_session()
+        kms = session.client("kms", region="eu-central-1")
+        kms.create_key(Description="asym-key", KeySpec="RSA_2048", KeyUsage="SIGN_VERIFY")
+        kms.create_key(Description="sym-key")  # defaults to SYMMETRIC_DEFAULT
+
+        check = CheckKmsKeyRotation()
+        result = asyncio.run(check.execute(session))
+
+        assert len(result.findings) == 1
+        assert result.findings[0].current_state["key_rotation_enabled"] is False
 
 
 class TestCheckTlsPolicy:

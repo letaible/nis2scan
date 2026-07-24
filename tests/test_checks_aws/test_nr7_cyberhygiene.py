@@ -80,7 +80,7 @@ class TestCheckIamPasswordPolicy:
 
         assert not result.findings
         assert len(result.errors) == 1
-        assert result.errors[0].error_type == "CheckError"
+        assert result.errors[0].error_type == "RuntimeError"
 
 
 class TestCheckRootAccessKeys:
@@ -109,4 +109,4 @@ class TestCheckRootAccessKeys:
 
         assert not result.findings
         assert len(result.errors) == 1
-        assert result.errors[0].error_type == "CheckError"
+        assert result.errors[0].error_type == "RuntimeError"

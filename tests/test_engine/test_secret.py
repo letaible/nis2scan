@@ -1,5 +1,7 @@
 """Tests for customer-secret resolution and nis2scan init (ADR-0010)."""
 
+import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -53,6 +55,76 @@ class TestGeneratePersist:
 
         assert path == secret_file
         assert path.read_text(encoding="utf-8").strip() == "abc123"
+
+
+class TestWindowsAcl:
+    """Windows ACL restriction on the secret file, symmetric to POSIX chmod."""
+
+    @pytest.mark.skipif(os.name != "nt", reason="icacls ACL restriction only applies on Windows")
+    def test_persist_secret_restricts_acl_to_current_user(self, secret_file: Path):
+        username = os.environ.get("USERNAME", "")
+        assert username, "USERNAME must be set on Windows to run this test"
+
+        persist_secret("acl-test-value")
+
+        result = subprocess.run(
+            ["icacls", str(secret_file)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        # icacls prints the path followed by one ACE line per grantee, then a
+        # blank line, then the "Successfully processed" summary. Everything
+        # before the blank line is the ACL for our file.
+        acl_block = result.stdout.split("\n\n")[0]
+
+        assert "(I)" not in acl_block, f"expected inherited ACEs to be stripped, got:\n{acl_block}"
+        assert username in acl_block, f"expected current user {username!r} to be granted access, got:\n{acl_block}"
+        assert acl_block.count(":(F)") == 1, f"expected exactly one Full-Control grantee, got:\n{acl_block}"
+
+    def test_icacls_missing_logs_warning_and_does_not_crash(self, secret_file: Path, monkeypatch: pytest.MonkeyPatch):
+        """Defensive path: icacls not on PATH must not break `nis2scan init`."""
+        monkeypatch.setattr(secret_module.os, "name", "nt")
+        monkeypatch.setenv("USERNAME", "testuser")
+
+        def fake_run(*args: object, **kwargs: object) -> None:
+            raise FileNotFoundError("icacls not found")
+
+        monkeypatch.setattr(secret_module.subprocess, "run", fake_run)
+
+        path = persist_secret("value-survives-missing-icacls")
+
+        assert path.read_text(encoding="utf-8").strip() == "value-survives-missing-icacls"
+
+    def test_icacls_nonzero_exit_logs_warning_and_does_not_crash(
+        self, secret_file: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Defensive path: icacls failing (e.g. access denied) must not crash."""
+        monkeypatch.setattr(secret_module.os, "name", "nt")
+        monkeypatch.setenv("USERNAME", "testuser")
+
+        def fake_run(*args: object, **kwargs: object) -> None:
+            raise subprocess.CalledProcessError(1, ["icacls"], output=b"", stderr=b"Access is denied.")
+
+        monkeypatch.setattr(secret_module.subprocess, "run", fake_run)
+
+        path = persist_secret("value-survives-failing-icacls")
+
+        assert path.read_text(encoding="utf-8").strip() == "value-survives-failing-icacls"
+
+    def test_no_username_env_logs_warning_and_does_not_crash(self, secret_file: Path, monkeypatch: pytest.MonkeyPatch):
+        """Defensive path: missing USERNAME env var must not crash either."""
+        monkeypatch.setattr(secret_module.os, "name", "nt")
+        monkeypatch.delenv("USERNAME", raising=False)
+
+        def fail_if_called(*args: object, **kwargs: object) -> None:
+            raise AssertionError("icacls should not be invoked without a USERNAME")
+
+        monkeypatch.setattr(secret_module.subprocess, "run", fail_if_called)
+
+        path = persist_secret("value-survives-no-username")
+
+        assert path.read_text(encoding="utf-8").strip() == "value-survives-no-username"
 
 
 class TestInitCommand:

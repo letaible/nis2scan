@@ -252,6 +252,34 @@ Every integration workflow has a 4-step cleanup (always runs):
 3. Nuke safety net (manual resource deletion fallback)
 4. Post-destroy verification (assert zero remaining resources)
 
+## Code Health Guidelines (Empfehlungen, Stand 24.07.2026)
+
+- Pagination: prefer boto3 paginators / SDK-native helpers over manual token
+  loops; every list/describe call must handle multi-page results.
+- Outer catches: `error_type=type(e).__name__`, never a literal string; one
+  try/except PER region so one failing region never silently skips the rest.
+- No premature cross-provider abstractions — duplication between the three
+  providers is accepted; shared helpers only within one provider.
+- Module soft limit ~800 lines; split nr9 modules on the next major touch.
+- New blocking SDK calls: keep the future run_blocking/to_thread convention
+  in mind (parallelization rebuild is planned) — avoid patterns that make
+  that migration harder (module-level clients, hidden global state).
+- CONTRIBUTING.md is missing and needed before external contributors arrive
+  (post-launch).
+- Consider hypothesis-based property tests for pseudonymizer and exceptions
+  matching (string-mangling code with security relevance).
+
+## Test-Strategie (Gründer-Vorgabe 24.07.2026, verbindlich)
+
+Testpyramide: Unit (moto/Fakes, jede Check-Logik) → CLI-Paket-Smoke in CI
+(Wheel-Install, Exit-Codes) → Integration gegen echte Cloud (Terraform
+deployt absichtliche Lücken, Checks laufen, destroy+nuke+verify) → CLI-E2E
+gegen echte Infra (geplant: installiertes Paket fährt Kunden-Use-Cases:
+Neuinstallation, Scan, Report, Exceptions) → SaaS-UI-e2e (Playwright,
+kontinuierlich erweitern). Integrationsläufe sollen Release-Gate für
+v*-Tags werden (geplant). Neue Features brauchen Abdeckung auf JEDER
+passenden Ebene, nicht nur Unit.
+
 ## Known Pitfalls & Constraints
 
 ### CLI

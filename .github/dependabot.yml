@@ -1,0 +1,44 @@
+# Dependabot configuration (Batch R2-B).
+#
+# Two ecosystems:
+# - pip: nis2scan's own runtime + dev dependencies (pyproject.toml).
+# - github-actions: the workflow files under .github/workflows/, so pinned
+#   action versions (checkout, setup-python, etc.) get bumped too.
+#
+# Grouped weekly PRs keep the volume manageable given nis2scan's large
+# dependency surface (boto3, the full azure-mgmt-* and google-cloud-* stacks).
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    groups:
+      aws-sdk:
+        patterns:
+          - "boto3*"
+          - "botocore*"
+      azure-sdk:
+        patterns:
+          - "azure-*"
+      gcp-sdk:
+        patterns:
+          - "google-*"
+    commit-message:
+      prefix: "deps"
+    labels:
+      - "dependencies"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+    labels:
+      - "dependencies"
+      - "github-actions"

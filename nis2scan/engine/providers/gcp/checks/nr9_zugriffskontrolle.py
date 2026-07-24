@@ -625,8 +625,9 @@ class CheckStorageBucketPublicAccess(BaseCheck):
     required_permissions = ["storage.buckets.list", "storage.buckets.getIamPolicy"]
     pruefgrenzen = (
         "Prüft Bucket-IAM auf allUsers/allAuthenticatedUsers. Buckets, deren "
-        "IAM-Policy nicht lesbar ist, werden übersprungen und erscheinen nicht "
-        "als Ergebnis."
+        "IAM-Policy nicht lesbar ist, werden als Fehler erfasst und liefern "
+        "keinen Positivnachweis. Objekt-ACLs (bei deaktiviertem Uniform "
+        "Bucket-Level Access) werden nicht bewertet."
     )
 
     async def execute(self, session: Any) -> CheckResult:
@@ -646,8 +647,19 @@ class CheckStorageBucketPublicAccess(BaseCheck):
                 for bucket in buckets:
                     try:
                         policy = bucket.get_iam_policy()
-                    except Exception:
-                        # May not have permission on specific bucket
+                    except Exception as exc:
+                        # ADR-0016: an unreadable bucket policy is an unknown state, not
+                        # a silent skip — record it so the gap is visible in the report,
+                        # and never fabricate a compliant finding for this bucket.
+                        errors.append(
+                            CheckError(
+                                message=(
+                                    f"IAM-Policy für Bucket {bucket.name} in Projekt {project_id} nicht abrufbar: {exc}"
+                                ),
+                                error_type=type(exc).__name__,
+                                region=bucket.location or "global",
+                            )
+                        )
                         continue
 
                     public_members = set()

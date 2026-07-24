@@ -125,7 +125,7 @@ class CheckEcrImageScanning(BaseCheck):
             errors.append(
                 CheckError(
                     message=f"ECR Image Scanning Check fehlgeschlagen: {e}",
-                    error_type="CheckError",
+                    error_type=type(e).__name__,
                 )
             )
 
@@ -252,7 +252,7 @@ class CheckSsmPatchCompliance(BaseCheck):
             errors.append(
                 CheckError(
                     message=f"SSM Patch Compliance Check fehlgeschlagen: {e}",
-                    error_type="CheckError",
+                    error_type=type(e).__name__,
                 )
             )
 
@@ -392,7 +392,7 @@ class CheckLambdaRuntimeDeprecation(BaseCheck):
             errors.append(
                 CheckError(
                     message=(f"Lambda Runtime Deprecation Check fehlgeschlagen: {e}"),
-                    error_type="CheckError",
+                    error_type=type(e).__name__,
                 )
             )
 
@@ -582,7 +582,7 @@ class CheckAmiAge(BaseCheck):
             errors.append(
                 CheckError(
                     message=f"AMI Age Check fehlgeschlagen: {e}",
-                    error_type="CheckError",
+                    error_type=type(e).__name__,
                 )
             )
 
@@ -807,7 +807,7 @@ class CheckSsmPatchManagerCompliance(BaseCheck):
             errors.append(
                 CheckError(
                     message=(f"SSM Patch Manager Compliance Check fehlgeschlagen: {e}"),
-                    error_type="CheckError",
+                    error_type=type(e).__name__,
                 )
             )
 

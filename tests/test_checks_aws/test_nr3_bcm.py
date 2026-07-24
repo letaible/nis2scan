@@ -1,6 +1,7 @@
 """Tests for §30 Nr. 3 — BCM AWS checks incl. positive evidence (ADR-0006)."""
 
 import asyncio
+from unittest.mock import MagicMock
 
 import boto3
 import pytest
@@ -30,6 +31,35 @@ def _compliant(result):
 
 def _maengel(result):
     return [f for f in result.findings if f.status == FindingStatus.NON_COMPLIANT]
+
+
+def _stub_bucket_pages(session, s3, pages: list[list[str]]):
+    """Route the list_buckets paginator through a fake two-page result.
+
+    moto does not implement ListBuckets ContinuationToken semantics, so the
+    paginator is stubbed directly (same pattern as test_nr8_kryptographie).
+    All other s3 operations keep hitting the moto-backed client.
+    """
+    fake_paginator = MagicMock()
+    fake_paginator.paginate.return_value = [{"Buckets": [{"Name": name} for name in page]} for page in pages]
+
+    real_get_paginator = s3.get_paginator
+
+    def get_paginator(operation_name):
+        if operation_name == "list_buckets":
+            return fake_paginator
+        return real_get_paginator(operation_name)
+
+    s3.get_paginator = get_paginator
+
+    real_client = session.client
+
+    def client(service: str, region: str | None = None):
+        if service == "s3":
+            return s3
+        return real_client(service, region=region)
+
+    session.client = client
 
 
 def _create_db(session, db_id: str, retention: int, multi_az: bool = False) -> None:
@@ -101,6 +131,32 @@ class TestCheckS3Versioning:
 
         assert len(_maengel(result)) == 1
         assert not _compliant(result)
+
+    @mock_aws
+    def test_paginated_bucket_list_evaluates_all_pages(self):
+        # FIX3: list_buckets() paginates via ContinuationToken — buckets past
+        # the first page must not be silently skipped.
+        session = _make_session()
+        s3 = session.client("s3")
+        s3.create_bucket(
+            Bucket="bucket-page1",
+            CreateBucketConfiguration={"LocationConstraint": "eu-central-1"},
+        )
+        s3.create_bucket(
+            Bucket="bucket-page2",
+            CreateBucketConfiguration={"LocationConstraint": "eu-central-1"},
+        )
+        s3.put_bucket_versioning(Bucket="bucket-page2", VersioningConfiguration={"Status": "Enabled"})
+        _stub_bucket_pages(session, s3, [["bucket-page1"], ["bucket-page2"]])
+
+        result = asyncio.run(CheckS3Versioning().execute(session))
+
+        page1 = [f for f in result.findings if "bucket-page1" in f.resource_id]
+        page2 = [f for f in result.findings if "bucket-page2" in f.resource_id]
+        assert len(page1) == 1
+        assert page1[0].status == FindingStatus.NON_COMPLIANT
+        assert len(page2) == 1
+        assert page2[0].status == FindingStatus.COMPLIANT
 
 
 class TestCheckS3ObjectLock:
@@ -183,6 +239,31 @@ class TestCheckS3ObjectLock:
         assert not result.findings
         assert len(result.errors) == 1
 
+    @mock_aws
+    def test_paginated_bucket_list_evaluates_all_pages(self):
+        # FIX3: buckets past the first ListBuckets page must be evaluated too.
+        session = _make_session()
+        s3 = session.client("s3")
+        s3.create_bucket(
+            Bucket="bucket-page1",
+            CreateBucketConfiguration={"LocationConstraint": "eu-central-1"},
+        )
+        s3.create_bucket(
+            Bucket="bucket-page2",
+            CreateBucketConfiguration={"LocationConstraint": "eu-central-1"},
+            ObjectLockEnabledForBucket=True,
+        )
+        _stub_bucket_pages(session, s3, [["bucket-page1"], ["bucket-page2"]])
+
+        result = asyncio.run(CheckS3ObjectLock().execute(session))
+
+        page1 = [f for f in result.findings if "bucket-page1" in f.resource_id]
+        page2 = [f for f in result.findings if "bucket-page2" in f.resource_id]
+        assert len(page1) == 1
+        assert page1[0].status == FindingStatus.NON_COMPLIANT
+        assert len(page2) == 1
+        assert page2[0].status == FindingStatus.COMPLIANT
+
 
 class TestCheckEbsSnapshotEncryption:
     @mock_aws
@@ -218,7 +299,7 @@ class TestCheckEbsSnapshotEncryption:
         session = _make_session()
         ec2 = session.client("ec2")
 
-        def _raise(**kwargs):
+        def _raise(*args, **kwargs):
             raise RuntimeError("boom")
 
         monkeypatch.setattr(ec2, "get_paginator", _raise)
@@ -228,7 +309,7 @@ class TestCheckEbsSnapshotEncryption:
 
         assert not result.findings
         assert len(result.errors) == 1
-        assert result.errors[0].error_type == "CheckError"
+        assert result.errors[0].error_type == "RuntimeError"
 
 
 class TestCheckRdsMultiAz:

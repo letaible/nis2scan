@@ -112,7 +112,7 @@ class CheckIamMfa(BaseCheck):
                         )
 
         except Exception as e:
-            errors.append(CheckError(message=f"IAM MFA Check fehlgeschlagen: {e}", error_type="CheckError"))
+            errors.append(CheckError(message=f"IAM MFA Check fehlgeschlagen: {e}", error_type=type(e).__name__))
 
         return CheckResult(check_id=self.check_id, findings=findings, errors=errors)
 
@@ -212,7 +212,7 @@ class CheckIamAccessKeyAge(BaseCheck):
                             )
 
         except Exception as e:
-            errors.append(CheckError(message=f"Access Key Age Check fehlgeschlagen: {e}", error_type="CheckError"))
+            errors.append(CheckError(message=f"Access Key Age Check fehlgeschlagen: {e}", error_type=type(e).__name__))
 
         return CheckResult(check_id=self.check_id, findings=findings, errors=errors)
 
@@ -339,7 +339,7 @@ class CheckS3PublicAccessBlock(BaseCheck):
             errors.append(
                 CheckError(
                     message=f"S3 Public Access Block Check fehlgeschlagen: {e}",
-                    error_type="CheckError",
+                    error_type=type(e).__name__,
                 )
             )
 
@@ -479,7 +479,7 @@ class CheckSecurityGroupOpenAccess(BaseCheck):
                             )
 
         except Exception as e:
-            errors.append(CheckError(message=f"Security Group Check fehlgeschlagen: {e}", error_type="CheckError"))
+            errors.append(CheckError(message=f"Security Group Check fehlgeschlagen: {e}", error_type=type(e).__name__))
 
         return CheckResult(check_id=self.check_id, findings=findings, errors=errors)
 
@@ -633,7 +633,7 @@ class CheckIamWildcardPolicy(BaseCheck):
             errors.append(
                 CheckError(
                     message=f"IAM Wildcard Policy Check fehlgeschlagen: {e}",
-                    error_type="CheckError",
+                    error_type=type(e).__name__,
                 )
             )
 
@@ -665,7 +665,8 @@ class CheckS3BucketPolicy(BaseCheck):
 
         try:
             s3 = session.client("s3")
-            buckets = s3.list_buckets().get("Buckets", [])
+            paginator = s3.get_paginator("list_buckets")
+            buckets = [bucket for page in paginator.paginate() for bucket in page.get("Buckets", [])]
 
             for bucket in buckets:
                 bucket_name = bucket["Name"]
@@ -799,7 +800,7 @@ class CheckS3BucketPolicy(BaseCheck):
             errors.append(
                 CheckError(
                     message=f"S3 Bucket Policy Check fehlgeschlagen: {e}",
-                    error_type="CheckError",
+                    error_type=type(e).__name__,
                 )
             )
 
@@ -1000,7 +1001,7 @@ class CheckUnusedIamCredentials(BaseCheck):
             errors.append(
                 CheckError(
                     message=f"Unused IAM Credentials Check fehlgeschlagen: {e}",
-                    error_type="CheckError",
+                    error_type=type(e).__name__,
                 )
             )
 

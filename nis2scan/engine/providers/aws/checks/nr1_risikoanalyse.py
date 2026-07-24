@@ -189,7 +189,7 @@ class CheckCloudTrail(BaseCheck):
             errors.append(
                 CheckError(
                     message=f"CloudTrail Check fehlgeschlagen: {e}",
-                    error_type="CheckError",
+                    error_type=type(e).__name__,
                 )
             )
 
@@ -210,8 +210,8 @@ class CheckConfigRecorder(BaseCheck):
     ]
     pruefgrenzen = (
         "Prüft nur, ob ein Config Recorder in den gescannten Regionen aufzeichnet. "
-        "Nicht geprüft werden der Aufzeichnungsumfang (alle Ressourcentypen?) und "
-        "ob die aufgezeichneten Daten ausgewertet werden."
+        "Nicht geprüft werden der Aufzeichnungsumfang und ob die aufgezeichneten "
+        "Daten ausgewertet werden."
     )
 
     async def execute(self, session: Any) -> CheckResult:
@@ -556,7 +556,7 @@ class CheckOrganizationsScp(BaseCheck):
             errors.append(
                 CheckError(
                     message=(f"Organizations SCP Check fehlgeschlagen: {e}"),
-                    error_type="CheckError",
+                    error_type=type(e).__name__,
                 )
             )
 

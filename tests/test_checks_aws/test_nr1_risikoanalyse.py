@@ -93,7 +93,7 @@ class TestCheckCloudTrail:
 
         assert not result.findings
         assert len(result.errors) == 1
-        assert result.errors[0].error_type == "CheckError"
+        assert result.errors[0].error_type == "RuntimeError"
 
 
 class TestCheckConfigRecorder:
@@ -239,7 +239,7 @@ class TestCheckOrganizationsScp:
 
         assert not result.findings
         assert len(result.errors) == 1
-        assert result.errors[0].error_type == "CheckError"
+        assert result.errors[0].error_type == "RuntimeError"
 
 
 class TestCheckGuardDuty:

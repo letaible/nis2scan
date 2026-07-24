@@ -362,3 +362,27 @@ Verlaufsabschnitte (Batches Nr. 4–10) und der Kampagnen-Bilanz.
 - **Gründer-Vermerk: ERTEILT (Chat-Vorabfreigabe 24.07.2026 „super, nimm
   es bitte mit auf", wirksam mit Delta-PASS — Präzedenz msgraph-Ablösung).**
   Beide ADR-0018-Vermerke liegen vor — Merge frei.
+
+#### Delta-Review Audit-Runde-2-Fixes — vier Prüfgrenzen-Texte (2026-07-24)
+
+- Gegenstand (Branch `r2/audit-fixes`): Logik-Fixes aus Audit Runde 2 mit
+  Text-Folgeänderungen an vier pruefgrenzen-Feldern: AWS-NR8-004 (Filter auf
+  symmetrische KMS-Schlüssel — vorher False Positives bei asymmetrischen/
+  HMAC-Keys), GCP-NR8-003 (aggregated_list: globale UND regionale
+  SSL-Policies; Permission compute.sslPolicies.list gegen die offizielle
+  Methodenreferenz verifiziert), GCP-NR9-005 (CheckError statt Silent-Skip
+  bei nicht lesbarer Bucket-IAM-Policy, ADR-0016), AWS-NR1-001
+  (Gründer-Wunsch: Einschub „(alle Ressourcentypen?)" entfernt). Dazu
+  S3-Pagination (4 Call-Sites) und error_type=type(e).__name__ repo-weit
+  (rein technisch, keine deutschen Texte).
+- **Zweitprüfung (legal-reviewer): FAIL → 1 Auflage + 2 Hinweise → alle
+  umgesetzt → Nachprüfung PASS.** Auflage: AWS-NR8-004 muss auch
+  CloudHSM-/externe-Schlüsselspeicher-Ursprünge und deaktivierte Schlüssel
+  offenlegen (stille Lücke nach ADR-0016 Regel 2). Hinweise übernommen:
+  Terminus „Positivnachweis" statt „Compliance-Nachweis"; Objekt-ACL-
+  Offenlegung bei GCP-NR9-005. Transparenzvermerk des Reviewers: die
+  GCP-Permission-Verifikation stützt sich auf den Koordinator-Abruf der
+  Methodenreferenz (Browser), Reviewer-eigener WebFetch scheiterte an der
+  Seitennavigation.
+- **Gründer-Vermerk: ERTEILT (Chat-Freigabe 24.07.2026 „Vermerk erteilt,
+  Tag frei").** Beide ADR-0018-Vermerke liegen vor — Merge frei.

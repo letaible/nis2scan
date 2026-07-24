@@ -67,10 +67,13 @@ class CheckTwoStepVerification(BaseCheck):
                         break
 
                 if not users:
+                    # No exception in scope here — the API succeeded but returned no
+                    # evaluable users. UnverifiableState is the repo-wide marker for
+                    # "nicht bewertbar" (same as AWS-NR8-001 empty rules).
                     errors.append(
                         CheckError(
                             message=(f"Projekt {project_id}: keine Benutzer abrufbar — nicht bewertbar"),
-                            error_type="CheckError",
+                            error_type="UnverifiableState",
                         )
                     )
                     continue
@@ -710,7 +713,7 @@ class CheckSecureLdap(BaseCheck):
                     errors.append(
                         CheckError(
                             message=(f"Projekt {project_id}: Cloud Identity nicht zugänglich — Nicht anwendbar: {exc}"),
-                            error_type="CheckError",
+                            error_type=type(exc).__name__,
                         )
                     )
                 else:

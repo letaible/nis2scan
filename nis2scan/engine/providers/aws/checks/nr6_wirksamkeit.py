@@ -315,7 +315,7 @@ class CheckCloudTrailLogIntegrity(BaseCheck):
             errors.append(
                 CheckError(
                     message=f"CloudTrail Log Integrity Check fehlgeschlagen: {e}",
-                    error_type="CheckError",
+                    error_type=type(e).__name__,
                 )
             )
 

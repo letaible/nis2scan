@@ -278,9 +278,9 @@ class CheckSslPolicyLoadBalancer(BaseCheck):
     provider = CloudProvider.GCP
     required_permissions = ["compute.sslPolicies.list"]
     pruefgrenzen = (
-        "Prüft nur explizit angelegte SSL-Policies. Load Balancer ohne zugewiesene "
-        "SSL-Policy (GCP-Default) und Policies ohne auslesbare TLS-Mindestversion "
-        "werden nicht bewertet."
+        "Prüft globale und regionale SSL-Policies (SslPolicies.aggregatedList). Load "
+        "Balancer ohne zugewiesene SSL-Policy (GCP-Default) und Policies ohne "
+        "auslesbare TLS-Mindestversion werden nicht bewertet."
     )
 
     async def execute(self, session: Any) -> CheckResult:
@@ -292,73 +292,81 @@ class CheckSslPolicyLoadBalancer(BaseCheck):
                 from google.cloud.compute_v1 import SslPoliciesClient
 
                 client = SslPoliciesClient(credentials=session.credentials)
-                ssl_policies = client.list(
+                # aggregated_list() returns SSL policies for BOTH the global scope and
+                # every region in one call (unlike a plain list(), which is global-only
+                # and misses regional SSL policies attached to regional target proxies).
+                ssl_policies_by_scope = client.aggregated_list(
                     request={"project": project_id},
                 )
 
-                for policy in ssl_policies:
-                    min_tls = policy.min_tls_version or ""
-                    if not min_tls:
-                        # No data at all (ADR-0016 fail-safe): neither evidence nor defect.
+                for scope, scoped_list in ssl_policies_by_scope:
+                    if not scoped_list.ssl_policies:
                         continue
+                    region = scope.removeprefix("regions/") if scope != "global" else "global"
 
-                    policy_id = policy.name or ""
-                    if min_tls == "TLS_1_2":
-                        findings.append(
-                            compliant_finding(
-                                self,
-                                title="SSL-Policy erzwingt sicheres TLS",
-                                description=(
-                                    f"SSL-Policy {policy_id} in Projekt {project_id} erzwingt mindestens {min_tls}."
-                                ),
-                                region="global",
-                                resource_id=f"sslPolicies/{policy_id}",
-                                resource_type="gcp.compute.SslPolicy",
-                                account_id=project_id,
-                                current_state={"min_tls_version": min_tls},
-                                expected_state="Minimale TLS-Version TLS_1_2",
-                                audit_evidence=f"SslPolicy.min_tls_version={min_tls}",
-                                iso27001_control="A.8.24 Verwendung von Kryptographie",
+                    for policy in scoped_list.ssl_policies:
+                        min_tls = policy.min_tls_version or ""
+                        if not min_tls:
+                            # No data at all (ADR-0016 fail-safe): neither evidence nor defect.
+                            continue
+
+                        policy_id = policy.name or ""
+                        if min_tls == "TLS_1_2":
+                            findings.append(
+                                compliant_finding(
+                                    self,
+                                    title="SSL-Policy erzwingt sicheres TLS",
+                                    description=(
+                                        f"SSL-Policy {policy_id} in Projekt {project_id} erzwingt mindestens {min_tls}."
+                                    ),
+                                    region=region,
+                                    resource_id=f"sslPolicies/{policy_id}",
+                                    resource_type="gcp.compute.SslPolicy",
+                                    account_id=project_id,
+                                    current_state={"min_tls_version": min_tls},
+                                    expected_state="Minimale TLS-Version TLS_1_2",
+                                    audit_evidence=f"SslPolicy.min_tls_version={min_tls}",
+                                    iso27001_control="A.8.24 Verwendung von Kryptographie",
+                                )
                             )
-                        )
-                    elif min_tls in ("TLS_1_0", "TLS_1_1"):
-                        findings.append(
-                            Finding(
-                                check_id=self.check_id,
-                                title="SSL-Policy erlaubt unsicheres TLS-Protokoll",
-                                description=(
-                                    f"SSL-Policy {policy_id} in Projekt "
-                                    f"{project_id} erlaubt "
-                                    f"{min_tls}. TLS 1.0 und 1.1 gelten als "
-                                    "unsicher und sollten deaktiviert werden."
-                                ),
-                                bsig_30_nr=BSIG_30_NR,
-                                bsig_30_text=BSIG_30_TEXT,
-                                iso27001_control="A.8.24 Verwendung von Kryptographie",
-                                severity=Severity.HIGH,
-                                provider=CloudProvider.GCP,
-                                region="global",
-                                resource_id=f"sslPolicies/{policy_id}",
-                                resource_type="gcp.compute.SslPolicy",
-                                account_id=project_id,
-                                current_state={"min_tls_version": min_tls},
-                                expected_state="Minimale TLS-Version TLS_1_2",
-                                remediation=(
-                                    "Aktualisieren Sie die SSL-Policy:\n"
-                                    "gcloud compute ssl-policies update <POLICY_NAME> "
-                                    "--min-tls-version=1.2 --project=<PROJECT_ID>"
-                                ),
-                                remediation_effort="LOW",
-                                audit_evidence=f"SslPolicy.min_tls_version={min_tls}",
+                        elif min_tls in ("TLS_1_0", "TLS_1_1"):
+                            findings.append(
+                                Finding(
+                                    check_id=self.check_id,
+                                    title="SSL-Policy erlaubt unsicheres TLS-Protokoll",
+                                    description=(
+                                        f"SSL-Policy {policy_id} in Projekt "
+                                        f"{project_id} erlaubt "
+                                        f"{min_tls}. TLS 1.0 und 1.1 gelten als "
+                                        "unsicher und sollten deaktiviert werden."
+                                    ),
+                                    bsig_30_nr=BSIG_30_NR,
+                                    bsig_30_text=BSIG_30_TEXT,
+                                    iso27001_control="A.8.24 Verwendung von Kryptographie",
+                                    severity=Severity.HIGH,
+                                    provider=CloudProvider.GCP,
+                                    region=region,
+                                    resource_id=f"sslPolicies/{policy_id}",
+                                    resource_type="gcp.compute.SslPolicy",
+                                    account_id=project_id,
+                                    current_state={"min_tls_version": min_tls},
+                                    expected_state="Minimale TLS-Version TLS_1_2",
+                                    remediation=(
+                                        "Aktualisieren Sie die SSL-Policy:\n"
+                                        "gcloud compute ssl-policies update <POLICY_NAME> "
+                                        "--min-tls-version=1.2 --project=<PROJECT_ID>"
+                                    ),
+                                    remediation_effort="LOW",
+                                    audit_evidence=f"SslPolicy.min_tls_version={min_tls}",
+                                )
                             )
-                        )
-                    else:
-                        errors.append(
-                            CheckError(
-                                message=f"Unbekannte TLS-Mindestversion {min_tls} — nicht bewertbar",
-                                error_type="UnverifiableState",
+                        else:
+                            errors.append(
+                                CheckError(
+                                    message=f"Unbekannte TLS-Mindestversion {min_tls} — nicht bewertbar",
+                                    error_type="UnverifiableState",
+                                )
                             )
-                        )
             except Exception as exc:
                 errors.append(CheckError(message=str(exc), error_type=type(exc).__name__))
 
