@@ -42,6 +42,20 @@ class PluginContext:
     report_exporters: dict[str, ReportExporter] = field(default_factory=dict)
 
 
+def installed_plugins() -> list[tuple[str, str]]:
+    """Name and package version of every installed nis2scan plugin.
+
+    Purely descriptive (for `nis2scan --version`): no import, no
+    compatibility check, no license validation — whether a plugin's features
+    are licensed is that plugin's own concern at feature use (ADR-0019/0023).
+    """
+    found: list[tuple[str, str]] = []
+    for ep in metadata.entry_points(group=PLUGIN_GROUP):
+        version = ep.dist.version if ep.dist is not None else "unbekannt"
+        found.append((ep.name, version))
+    return sorted(found)
+
+
 def load_plugins(cli_app: "typer.Typer") -> PluginContext:
     """Discover and register all installed nis2scan plugins (ADR-0019)."""
     ctx = PluginContext(cli_app=cli_app)

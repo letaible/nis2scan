@@ -7,6 +7,16 @@ stehen in den [GitHub Releases](https://github.com/letaible/nis2scan/releases).
 
 ## Unveröffentlicht
 
+### Hinzugefügt
+
+- `nis2scan --version` zeigt jetzt zusätzlich die Edition (Free/Professional)
+  und alle installierten Plugins mit Version — bisher war nirgends sichtbar,
+  welche Version und welche Lizenzart im Einsatz ist.
+- Scan-Ergebnis-Vertrag 1.2.0 (additiv): `CheckOutcomeEntry.error_messages`
+  transportiert die Fehlermeldungen hinter `error_count`; das EXTERN-Profil
+  leert die Liste (rohe Exception-Strings können Bezeichner enthalten, die
+  kein Finding nennt). Details: docs/schema-changelog.md.
+
 ### Geändert
 
 - Release-Pipeline: Ein Tag-Push (`v*`) durchläuft jetzt die AWS-, Azure-

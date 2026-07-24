@@ -81,7 +81,19 @@ app = typer.Typer(
 
 def version_callback(value: bool) -> None:
     if value:
+        from nis2scan.plugins import installed_plugins
+
         console.print(f"nis2scan v{__version__}")
+        plugins = installed_plugins()
+        if plugins:
+            for name, plugin_version in plugins:
+                console.print(f"Plugin: {name} v{plugin_version}")
+            console.print(
+                "Edition: Professional (Plugin installiert — der Lizenzstatus "
+                "wird bei Nutzung der Professional-Funktionen geprüft)"
+            )
+        else:
+            console.print("Edition: Free (Apache 2.0)")
         raise typer.Exit()
 
 
