@@ -1,6 +1,6 @@
-# Release pipeline (ADR-0019): every git tag v* automatically publishes the
-# free package to PyPI. No manual builds, no stored API tokens — PyPI Trusted
-# Publishing via OIDC.
+# Release pipeline (ADR-0019): every git tag v* publishes the free package to
+# PyPI. No manual builds, no stored API tokens — PyPI Trusted Publishing via
+# OIDC.
 #
 # One-time setup on pypi.org (project "nis2scan" -> Publishing):
 #   owner: letaible, repo: nis2scan, workflow: release.yml, environment: pypi
@@ -8,14 +8,79 @@
 # Version coupling (ADR-0019): a new MINOR release of nis2scan requires a
 # matching nis2scan-premium release whose NIS2SCAN_REQUIRES covers it —
 # tag both repos together so compatible pairs always appear together.
+#
+# Testpyramide Stufe 1 (Gründer-Vorgabe 24.07.2026, CLAUDE.md
+# "Test-Strategie"): auf einen Tag-Push laufen die drei Integrationstest-
+# Workflows hier als Release-Gate VOR dem PyPI-Publish. Sie sind reusable
+# Workflows (on.workflow_call) und werden per `uses:` aufgerufen; schlägt
+# einer fehl (Findings, Terraform-Fehler, ...), publisht nichts.
+#
+# NOTFALL-AUSSTIEG (Gründer-Entscheid 24.07.2026): Ein manueller Lauf über
+# "Run workflow" (workflow_dispatch) mit confirm=RELEASE ÜBERSPRINGT das
+# Integrations-Gate und publisht direkt. Gedacht für kritische Hotfixes,
+# wenn eine Cloud gerade streikt oder ein Integrationslauf flaky ist. Die
+# zu publizierende Version kommt aus nis2scan/__init__.py (hatch dynamic),
+# nicht aus dem Tag — für einen Notfall-Release also __version__ bumpen,
+# committen, dann diesen Workflow manuell auf dem gewünschten Branch/Tag
+# starten.
 name: Release
 
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Notfall-Publish OHNE Integrations-Gate. Zum Bestätigen exakt "RELEASE" eintippen.'
+        required: true
+        default: ""
 
 jobs:
+  # Gate-Jobs laufen NUR beim Tag-Push, nicht beim manuellen Notfall-Lauf.
+  integration-tests-aws:
+    name: Integration Tests (AWS) — Release-Gate
+    if: github.event_name == 'push'
+    uses: ./.github/workflows/integration-tests-aws.yml
+    secrets: inherit
+    permissions:
+      id-token: write
+      contents: read
+
+  integration-tests-azure:
+    name: Integration Tests (Azure) — Release-Gate
+    if: github.event_name == 'push'
+    uses: ./.github/workflows/integration-tests-azure.yml
+    secrets: inherit
+    permissions:
+      id-token: write
+      contents: read
+
+  integration-tests-gcp:
+    name: Integration Tests (GCP) — Release-Gate
+    if: github.event_name == 'push'
+    uses: ./.github/workflows/integration-tests-gcp.yml
+    secrets: inherit
+    permissions:
+      id-token: write
+      contents: read
+
   build-and-publish:
+    needs: [integration-tests-aws, integration-tests-azure, integration-tests-gcp]
+    # Publish, wenn ENTWEDER der Notfall-Ausstieg korrekt bestätigt wurde
+    # ODER alle drei Integrationsläufe (Tag-Push) grün sind. always() ist
+    # nötig, damit dieser Job auch dann bewertet wird, wenn die Gate-Jobs
+    # übersprungen wurden (workflow_dispatch).
+    if: >-
+      always() &&
+      (
+        (github.event_name == 'workflow_dispatch' && github.event.inputs.confirm == 'RELEASE') ||
+        (
+          github.event_name == 'push' &&
+          needs.integration-tests-aws.result == 'success' &&
+          needs.integration-tests-azure.result == 'success' &&
+          needs.integration-tests-gcp.result == 'success'
+        )
+      )
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -26,6 +91,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Emergency-bypass audit note
+        if: github.event_name == 'workflow_dispatch'
+        run: echo "::warning::Notfall-Release ohne Integrations-Gate (workflow_dispatch, ausgelöst von ${{ github.actor }})."
       - name: Build sdist and wheel
         run: |
           pip install build

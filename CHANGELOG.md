@@ -9,6 +9,28 @@ stehen in den [GitHub Releases](https://github.com/letaible/nis2scan/releases).
 
 ### Geändert
 
+- Release-Pipeline: Ein Tag-Push (`v*`) durchläuft jetzt die AWS-, Azure-
+  und GCP-Integrationsläufe als Release-Gate, bevor auf PyPI veröffentlicht
+  wird. Für kritische Hotfixes gibt es einen Notfall-Ausstieg über einen
+  manuellen Workflow-Start (mit Bestätigung), der das Gate überspringt.
+
+## 0.1.6 - 2026-07-24
+
+### Behoben
+
+- AWS-NR8-004 (KMS-Rotation): Asymmetrische und HMAC-Schlüssel werden nicht
+  mehr fälschlich als „ohne Rotation" gemeldet (Filter auf symmetrische
+  Schlüssel); die Prüfgrenzen legen die nicht bewerteten Schlüsselarten
+  jetzt vollständig offen.
+- GCP-NR8-003 (SSL-Policies): prüft jetzt globale und regionale Policies.
+- GCP-NR9-005 (öffentliche Storage-Buckets): eine nicht lesbare
+  IAM-Policy wird als Fehler erfasst statt still übersprungen (Fail-safe,
+  ADR-0016).
+- S3-Bucket-Auflistung paginiert vollständig (Konten mit sehr vielen
+  Buckets werden nicht mehr abgeschnitten).
+
+### Geändert
+
 - Deutlich weniger Cloud-API-Aufrufe pro Scan: Die Provider-Session wird
   einmal pro Scan statt einmal pro Check aufgebaut (spart bei AssumeRole
   und Subscription-/Projekt-Erkennung bis zu rund 50 Netzwerk-Aufrufe pro
@@ -19,14 +41,22 @@ stehen in den [GitHub Releases](https://github.com/letaible/nis2scan/releases).
   damit das Extern-Report-Profil diese Werte zuverlässig pseudonymisiert.
   Prüftexte und Prüflogik sind unverändert (Delta-Rechtsreview, siehe
   `docs/rechtsgrundlagen-review.md`).
-- CI misst jetzt Testabdeckung und prüft das gebaute Paket zusätzlich über
-  einen CLI-Smoke-Test (Installation aus dem Wheel, Exit-Code-Prüfungen).
+- Fehlermeldungen der Checks tragen jetzt durchgängig den echten
+  Ausnahmetyp statt eines festen Platzhalters.
+
+### Sicherheit
+
+- CI prüft Abhängigkeiten mit pip-audit und aktiviert Dependabot
+  (wöchentlich) für Python-Pakete und GitHub-Actions.
+- Die lokale Geheimnis-Datei `~/.nis2scan/secret` wird unter Windows auf
+  den aktuellen Benutzer beschränkt (ACL-Härtung, analog zu Unix).
+- Das Paket liefert jetzt einen `py.typed`-Marker mit (PEP 561).
 
 ### Dokumentation
 
 - Neue Anleitung `docs/gcp-zugang.md`; Findings-Exceptions und die
   Exit-Codes sind jetzt in `docs/getting-started.md` dokumentiert; drei
-  fehlerhafte Kommandos im README korrigiert; dieses CHANGELOG ergänzt.
+  fehlerhafte Kommandos im README korrigiert; CLI-Smoke-Test in CI.
 
 ## 0.1.5 - 2026-07-24
 
