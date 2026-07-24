@@ -384,4 +384,5 @@ Verlaufsabschnitte (Batches Nr. 4–10) und der Kampagnen-Bilanz.
   GCP-Permission-Verifikation stützt sich auf den Koordinator-Abruf der
   Methodenreferenz (Browser), Reviewer-eigener WebFetch scheiterte an der
   Seitennavigation.
-- **Gründer-Vermerk: AUSSTEHEND** — ohne beide Vermerke kein Merge.
+- **Gründer-Vermerk: ERTEILT (Chat-Freigabe 24.07.2026 „Vermerk erteilt,
+  Tag frei").** Beide ADR-0018-Vermerke liegen vor — Merge frei.
