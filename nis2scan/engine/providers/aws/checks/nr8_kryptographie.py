@@ -43,7 +43,8 @@ class CheckS3DefaultEncryption(BaseCheck):
 
         try:
             s3 = session.client("s3")
-            buckets = s3.list_buckets().get("Buckets", [])
+            paginator = s3.get_paginator("list_buckets")
+            buckets = [bucket for page in paginator.paginate() for bucket in page.get("Buckets", [])]
 
             for bucket in buckets:
                 bucket_name = bucket["Name"]
@@ -138,7 +139,7 @@ class CheckS3DefaultEncryption(BaseCheck):
                         )
 
         except Exception as e:
-            errors.append(CheckError(message=f"S3 Encryption Check fehlgeschlagen: {e}", error_type="CheckError"))
+            errors.append(CheckError(message=f"S3 Encryption Check fehlgeschlagen: {e}", error_type=type(e).__name__))
 
         return CheckResult(check_id=self.check_id, findings=findings, errors=errors)
 
@@ -216,7 +217,7 @@ class CheckEbsEncryption(BaseCheck):
                             )
 
         except Exception as e:
-            errors.append(CheckError(message=f"EBS Encryption Check fehlgeschlagen: {e}", error_type="CheckError"))
+            errors.append(CheckError(message=f"EBS Encryption Check fehlgeschlagen: {e}", error_type=type(e).__name__))
 
         return CheckResult(check_id=self.check_id, findings=findings, errors=errors)
 
@@ -307,7 +308,7 @@ class CheckRdsEncryption(BaseCheck):
                             )
 
         except Exception as e:
-            errors.append(CheckError(message=f"RDS Encryption Check fehlgeschlagen: {e}", error_type="CheckError"))
+            errors.append(CheckError(message=f"RDS Encryption Check fehlgeschlagen: {e}", error_type=type(e).__name__))
 
         return CheckResult(check_id=self.check_id, findings=findings, errors=errors)
 
@@ -322,9 +323,12 @@ class CheckKmsKeyRotation(BaseCheck):
     provider = CloudProvider.AWS
     required_permissions = ["kms:ListKeys", "kms:GetKeyRotationStatus", "kms:DescribeKey"]
     pruefgrenzen = (
-        "Prüft nur die automatische Rotation kundenverwalteter KMS-Schlüssel. "
-        "AWS-verwaltete Schlüssel und importiertes Schlüsselmaterial rotieren anders "
-        "und werden nicht bewertet."
+        "Prüft nur die automatische Rotation kundenverwalteter, symmetrischer KMS-Schlüssel "
+        "(KeySpec SYMMETRIC_DEFAULT). AWS-verwaltete Schlüssel sowie Schlüssel mit Ursprung "
+        "außerhalb von AWS KMS (importiertes Schlüsselmaterial, CloudHSM, externe "
+        "Schlüsselspeicher) rotieren anders und werden nicht bewertet; deaktivierte Schlüssel "
+        "ebenfalls nicht. Asymmetrische und HMAC-Schlüssel unterstützen die automatische "
+        "Rotation nicht in gleicher Weise und werden ebenfalls nicht bewertet."
     )
 
     async def execute(self, session: Any) -> CheckResult:
@@ -350,6 +354,13 @@ class CheckKmsKeyRotation(BaseCheck):
                             # EXTERNAL-origin keys (imported key material) rotate
                             # differently and are out of this check's Prüfgrenzen (H-3).
                             if key_info.get("Origin") != "AWS_KMS":
+                                continue
+                            # Asymmetric and HMAC keys do not support automatic rotation
+                            # the same way symmetric keys do. AWS's GetKeyRotationStatus
+                            # returns KeyRotationEnabled=false for them instead of an
+                            # error, which would otherwise be misread as a defect (false
+                            # positive).
+                            if key_info.get("KeySpec") != "SYMMETRIC_DEFAULT":
                                 continue
 
                             rotation = kms.get_key_rotation_status(KeyId=key_id)
@@ -410,7 +421,9 @@ class CheckKmsKeyRotation(BaseCheck):
                             )
 
         except Exception as e:
-            errors.append(CheckError(message=f"KMS Key Rotation Check fehlgeschlagen: {e}", error_type="CheckError"))
+            errors.append(
+                CheckError(message=f"KMS Key Rotation Check fehlgeschlagen: {e}", error_type=type(e).__name__)
+            )
 
         return CheckResult(check_id=self.check_id, findings=findings, errors=errors)
 
@@ -512,7 +525,7 @@ class CheckTlsPolicy(BaseCheck):
                     )
 
         except Exception as e:
-            errors.append(CheckError(message=f"TLS Policy Check fehlgeschlagen: {e}", error_type="CheckError"))
+            errors.append(CheckError(message=f"TLS Policy Check fehlgeschlagen: {e}", error_type=type(e).__name__))
 
         return CheckResult(check_id=self.check_id, findings=findings, errors=errors)
 
@@ -665,7 +678,7 @@ class CheckElbTlsMinVersion(BaseCheck):
             errors.append(
                 CheckError(
                     message=f"ELB TLS Min Version Check fehlgeschlagen: {e}",
-                    error_type="CheckError",
+                    error_type=type(e).__name__,
                 )
             )
 
@@ -820,7 +833,7 @@ class CheckAcmCertificateExpiry(BaseCheck):
             errors.append(
                 CheckError(
                     message=f"ACM Certificate Expiry Check fehlgeschlagen: {e}",
-                    error_type="CheckError",
+                    error_type=type(e).__name__,
                 )
             )
 

@@ -140,18 +140,24 @@ class TestCheckSslPolicyLoadBalancer:
         monkeypatch.setattr(compute_v1, "SslPoliciesClient", lambda credentials: client)
         return client
 
+    def _wire(self, ssl_client: MagicMock, *scoped: tuple[str, list]) -> None:
+        ssl_client.aggregated_list.return_value = [
+            (scope, SimpleNamespace(ssl_policies=pols)) for scope, pols in scoped
+        ]
+
     def test_tls12_policy_produces_positive_evidence(self, ssl_client: MagicMock):
-        ssl_client.list.return_value = [SimpleNamespace(name="pol-1", min_tls_version="TLS_1_2")]
+        self._wire(ssl_client, ("global", [SimpleNamespace(name="pol-1", min_tls_version="TLS_1_2")]))
 
         result = asyncio.run(CheckSslPolicyLoadBalancer().execute(FakeGcpSession()))
 
         compliant = _compliant(result)
         assert len(compliant) == 1
         assert compliant[0].current_state["min_tls_version"] == "TLS_1_2"
+        assert compliant[0].region == "global"
         assert not _maengel(result)
 
     def test_tls10_policy_produces_finding(self, ssl_client: MagicMock):
-        ssl_client.list.return_value = [SimpleNamespace(name="pol-1", min_tls_version="TLS_1_0")]
+        self._wire(ssl_client, ("global", [SimpleNamespace(name="pol-1", min_tls_version="TLS_1_0")]))
 
         result = asyncio.run(CheckSslPolicyLoadBalancer().execute(FakeGcpSession()))
 
@@ -160,7 +166,7 @@ class TestCheckSslPolicyLoadBalancer:
 
     def test_unknown_tls_version_produces_no_evidence(self, ssl_client: MagicMock):
         # Fail-safe (ADR-0016): missing min_tls_version yields neither evidence nor defect
-        ssl_client.list.return_value = [SimpleNamespace(name="pol-1", min_tls_version="")]
+        self._wire(ssl_client, ("global", [SimpleNamespace(name="pol-1", min_tls_version="")]))
 
         result = asyncio.run(CheckSslPolicyLoadBalancer().execute(FakeGcpSession()))
 
@@ -169,13 +175,43 @@ class TestCheckSslPolicyLoadBalancer:
     def test_unrecognized_tls_value_produces_checkerror(self, ssl_client: MagicMock):
         # B-Nr.8-13: a non-empty but unrecognized value must not be silently
         # treated as compliant — it is genuinely not bewertbar.
-        ssl_client.list.return_value = [SimpleNamespace(name="pol-1", min_tls_version="TLS_1_3_FUTURE")]
+        self._wire(ssl_client, ("global", [SimpleNamespace(name="pol-1", min_tls_version="TLS_1_3_FUTURE")]))
 
         result = asyncio.run(CheckSslPolicyLoadBalancer().execute(FakeGcpSession()))
 
         assert not result.findings
         assert len(result.errors) == 1
         assert result.errors[0].error_type == "UnverifiableState"
+
+    def test_regional_ssl_policy_is_evaluated(self, ssl_client: MagicMock):
+        # FIX2: a plain SslPoliciesClient.list() only returns the global
+        # scope and silently misses SSL policies attached to regional target
+        # proxies. aggregated_list() must cover both scopes.
+        self._wire(
+            ssl_client,
+            ("global", []),
+            ("regions/europe-west3", [SimpleNamespace(name="pol-regional", min_tls_version="TLS_1_0")]),
+        )
+
+        result = asyncio.run(CheckSslPolicyLoadBalancer().execute(FakeGcpSession()))
+
+        maengel = _maengel(result)
+        assert len(maengel) == 1
+        assert maengel[0].region == "europe-west3"
+        assert "pol-regional" in maengel[0].resource_id
+
+    def test_global_and_regional_policies_both_evaluated(self, ssl_client: MagicMock):
+        self._wire(
+            ssl_client,
+            ("global", [SimpleNamespace(name="pol-global", min_tls_version="TLS_1_2")]),
+            ("regions/europe-west3", [SimpleNamespace(name="pol-regional", min_tls_version="TLS_1_2")]),
+        )
+
+        result = asyncio.run(CheckSslPolicyLoadBalancer().execute(FakeGcpSession()))
+
+        compliant = _compliant(result)
+        assert len(compliant) == 2
+        assert {c.region for c in compliant} == {"global", "europe-west3"}
 
 
 class TestCheckCloudSqlSsl:

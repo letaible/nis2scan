@@ -94,7 +94,7 @@ class CheckRootMfa(BaseCheck):
                 )
 
         except Exception as e:
-            errors.append(CheckError(message=f"Root MFA Check fehlgeschlagen: {e}", error_type="CheckError"))
+            errors.append(CheckError(message=f"Root MFA Check fehlgeschlagen: {e}", error_type=type(e).__name__))
 
         return CheckResult(check_id=self.check_id, findings=findings, errors=errors)
 
@@ -197,7 +197,7 @@ class CheckIamUserMfaEnforcement(BaseCheck):
             errors.append(
                 CheckError(
                     message=f"IAM MFA Enforcement Check fehlgeschlagen: {e}",
-                    error_type="CheckError",
+                    error_type=type(e).__name__,
                 )
             )
 
@@ -311,7 +311,7 @@ class CheckVpnAdminAccess(BaseCheck):
             errors.append(
                 CheckError(
                     message=f"VPN Admin Access Check fehlgeschlagen: {e}",
-                    error_type="CheckError",
+                    error_type=type(e).__name__,
                 )
             )
 
@@ -463,7 +463,7 @@ class CheckSesSnsTls(BaseCheck):
             errors.append(
                 CheckError(
                     message=f"SES/SNS TLS Check fehlgeschlagen: {e}",
-                    error_type="CheckError",
+                    error_type=type(e).__name__,
                 )
             )
 
@@ -592,7 +592,7 @@ class CheckBreakGlassProcedure(BaseCheck):
             errors.append(
                 CheckError(
                     message=(f"Break-Glass Check fehlgeschlagen: {e}"),
-                    error_type="CheckError",
+                    error_type=type(e).__name__,
                 )
             )
 

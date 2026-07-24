@@ -126,7 +126,7 @@ class CheckRdsBackupRetention(BaseCheck):
             errors.append(
                 CheckError(
                     message=f"RDS Backup Retention Check fehlgeschlagen: {e}",
-                    error_type="CheckError",
+                    error_type=type(e).__name__,
                 )
             )
 
@@ -158,7 +158,8 @@ class CheckS3Versioning(BaseCheck):
 
         try:
             s3 = session.client("s3")
-            buckets = s3.list_buckets().get("Buckets", [])
+            paginator = s3.get_paginator("list_buckets")
+            buckets = [bucket for page in paginator.paginate() for bucket in page.get("Buckets", [])]
 
             for bucket in buckets:
                 bucket_name = bucket["Name"]
@@ -230,7 +231,7 @@ class CheckS3Versioning(BaseCheck):
             errors.append(
                 CheckError(
                     message=f"S3 Versioning Check fehlgeschlagen: {e}",
-                    error_type="CheckError",
+                    error_type=type(e).__name__,
                 )
             )
 
@@ -299,7 +300,8 @@ class CheckS3ObjectLock(BaseCheck):
 
         try:
             s3 = session.client("s3")
-            buckets = s3.list_buckets().get("Buckets", [])
+            paginator = s3.get_paginator("list_buckets")
+            buckets = [bucket for page in paginator.paginate() for bucket in page.get("Buckets", [])]
 
             for bucket in buckets:
                 bucket_name = bucket["Name"]
@@ -361,7 +363,7 @@ class CheckS3ObjectLock(BaseCheck):
             errors.append(
                 CheckError(
                     message=(f"S3 Object Lock Check fehlgeschlagen: {e}"),
-                    error_type="CheckError",
+                    error_type=type(e).__name__,
                 )
             )
 
@@ -536,7 +538,7 @@ class CheckEbsSnapshotEncryption(BaseCheck):
             errors.append(
                 CheckError(
                     message=(f"EBS Snapshot Encryption Check fehlgeschlagen: {e}"),
-                    error_type="CheckError",
+                    error_type=type(e).__name__,
                 )
             )
 
@@ -649,7 +651,7 @@ class CheckRdsMultiAz(BaseCheck):
             errors.append(
                 CheckError(
                     message=(f"RDS Multi-AZ Check fehlgeschlagen: {e}"),
-                    error_type="CheckError",
+                    error_type=type(e).__name__,
                 )
             )
 
@@ -747,7 +749,7 @@ class CheckRoute53HealthChecks(BaseCheck):
             errors.append(
                 CheckError(
                     message=f"Route 53 Health Checks Check fehlgeschlagen: {e}",
-                    error_type="CheckError",
+                    error_type=type(e).__name__,
                 )
             )
 
@@ -849,7 +851,7 @@ class CheckBackupPlans(BaseCheck):
             errors.append(
                 CheckError(
                     message=(f"AWS Backup Plans Check fehlgeschlagen: {e}"),
-                    error_type="CheckError",
+                    error_type=type(e).__name__,
                 )
             )
 

@@ -130,7 +130,7 @@ class TestCheckIamUserMfaEnforcement:
         result = asyncio.run(check.execute(session))
 
         assert len(result.errors) == 1
-        assert result.errors[0].error_type == "CheckError"
+        assert result.errors[0].error_type == "RuntimeError"
         assert "transient AWS error" in result.errors[0].message
         assert len(result.findings) == 0
 
@@ -279,7 +279,7 @@ class TestCheckBreakGlassProcedure:
         session = _make_session()
         iam = session.client("iam")
 
-        def _raise(**kwargs):
+        def _raise(*args, **kwargs):
             raise RuntimeError("boom")
 
         monkeypatch.setattr(iam, "get_paginator", _raise)
@@ -289,4 +289,4 @@ class TestCheckBreakGlassProcedure:
 
         assert not result.findings
         assert len(result.errors) == 1
-        assert result.errors[0].error_type == "CheckError"
+        assert result.errors[0].error_type == "RuntimeError"

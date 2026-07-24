@@ -165,7 +165,7 @@ class CheckTrustedAdvisorAccess(BaseCheck):
             errors.append(
                 CheckError(
                     message=f"Trusted Advisor Check fehlgeschlagen: {e}",
-                    error_type="CheckError",
+                    error_type=type(e).__name__,
                 )
             )
 
@@ -297,7 +297,7 @@ class CheckRamSharingPolicies(BaseCheck):
             errors.append(
                 CheckError(
                     message=f"RAM Sharing Check fehlgeschlagen: {e}",
-                    error_type="CheckError",
+                    error_type=type(e).__name__,
                 )
             )
 
@@ -430,7 +430,7 @@ class CheckOrganizationsExternalAccounts(BaseCheck):
             errors.append(
                 CheckError(
                     message=f"Organizations External Accounts Check fehlgeschlagen: {e}",
-                    error_type="CheckError",
+                    error_type=type(e).__name__,
                 )
             )
 
@@ -620,7 +620,7 @@ class CheckCrossAccountRoles(BaseCheck):
             errors.append(
                 CheckError(
                     message=f"Cross-Account Roles Check fehlgeschlagen: {e}",
-                    error_type="CheckError",
+                    error_type=type(e).__name__,
                 )
             )
 
@@ -772,7 +772,7 @@ class CheckScpForThirdPartyOus(BaseCheck):
             errors.append(
                 CheckError(
                     message=f"SCP für Drittanbieter Check fehlgeschlagen: {e}",
-                    error_type="CheckError",
+                    error_type=type(e).__name__,
                 )
             )
 

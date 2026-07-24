@@ -150,7 +150,7 @@ class CheckGuardDutyEnabled(BaseCheck):
             errors.append(
                 CheckError(
                     message=f"GuardDuty Check fehlgeschlagen: {e}",
-                    error_type="CheckError",
+                    error_type=type(e).__name__,
                 )
             )
 
@@ -258,7 +258,7 @@ class CheckCloudWatchAlarms(BaseCheck):
             errors.append(
                 CheckError(
                     message=f"CloudWatch Alarms Check fehlgeschlagen: {e}",
-                    error_type="CheckError",
+                    error_type=type(e).__name__,
                 )
             )
 
@@ -350,7 +350,7 @@ class CheckSecurityHubFindings(BaseCheck):
             errors.append(
                 CheckError(
                     message=(f"Security Hub Check fehlgeschlagen: {e}"),
-                    error_type="CheckError",
+                    error_type=type(e).__name__,
                 )
             )
 
@@ -460,7 +460,7 @@ class CheckDetectiveEnabled(BaseCheck):
             errors.append(
                 CheckError(
                     message=f"Detective Check fehlgeschlagen: {e}",
-                    error_type="CheckError",
+                    error_type=type(e).__name__,
                 )
             )
 
@@ -563,7 +563,7 @@ class CheckIncidentManagerResponsePlans(BaseCheck):
             errors.append(
                 CheckError(
                     message=(f"Incident Manager Check fehlgeschlagen: {e}"),
-                    error_type="CheckError",
+                    error_type=type(e).__name__,
                 )
             )
 

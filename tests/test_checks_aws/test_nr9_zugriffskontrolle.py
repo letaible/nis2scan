@@ -96,7 +96,7 @@ class TestCheckIamMfa:
         session = _make_session()
         iam = session.client("iam")
 
-        def _raise(**kwargs):
+        def _raise(*args, **kwargs):
             raise RuntimeError("boom")
 
         monkeypatch.setattr(iam, "get_paginator", _raise)
@@ -107,7 +107,7 @@ class TestCheckIamMfa:
 
         assert not result.findings
         assert len(result.errors) == 1
-        assert result.errors[0].error_type == "CheckError"
+        assert result.errors[0].error_type == "RuntimeError"
 
 
 class TestCheckIamAccessKeyAge:
@@ -142,7 +142,7 @@ class TestCheckIamAccessKeyAge:
         session = _make_session()
         iam = session.client("iam")
 
-        def _raise(**kwargs):
+        def _raise(*args, **kwargs):
             raise RuntimeError("boom")
 
         monkeypatch.setattr(iam, "get_paginator", _raise)
@@ -153,7 +153,7 @@ class TestCheckIamAccessKeyAge:
 
         assert not result.findings
         assert len(result.errors) == 1
-        assert result.errors[0].error_type == "CheckError"
+        assert result.errors[0].error_type == "RuntimeError"
 
 
 class TestCheckSecurityGroupOpenAccess:
@@ -310,7 +310,7 @@ class TestCheckSecurityGroupOpenAccess:
         session = _make_session()
         ec2 = session.client("ec2", region="eu-central-1")
 
-        def _raise(**kwargs):
+        def _raise(*args, **kwargs):
             raise RuntimeError("boom")
 
         monkeypatch.setattr(ec2, "get_paginator", _raise)
@@ -321,7 +321,7 @@ class TestCheckSecurityGroupOpenAccess:
 
         assert not result.findings
         assert len(result.errors) == 1
-        assert result.errors[0].error_type == "CheckError"
+        assert result.errors[0].error_type == "RuntimeError"
 
 
 class TestCheckIamWildcardPolicy:
@@ -376,7 +376,7 @@ class TestCheckIamWildcardPolicy:
         session = _make_session()
         iam = session.client("iam")
 
-        def _raise(**kwargs):
+        def _raise(*args, **kwargs):
             raise RuntimeError("boom")
 
         monkeypatch.setattr(iam, "get_paginator", _raise)
@@ -387,7 +387,7 @@ class TestCheckIamWildcardPolicy:
 
         assert not result.findings
         assert len(result.errors) == 1
-        assert result.errors[0].error_type == "CheckError"
+        assert result.errors[0].error_type == "RuntimeError"
 
 
 class TestCheckS3BucketPolicy:
@@ -479,6 +479,71 @@ class TestCheckS3BucketPolicy:
         assert bucket_findings[0].status == FindingStatus.COMPLIANT
 
     @mock_aws
+    def test_paginated_bucket_list_evaluates_all_pages(self):
+        # FIX3: list_buckets() is not guaranteed to return every bucket in a
+        # single response (AWS paginates via ContinuationToken). moto does
+        # not implement ListBuckets ContinuationToken semantics, so the
+        # paginator is stubbed directly with two pages.
+        session = _make_session()
+        real_s3 = session.client("s3")
+        real_s3.create_bucket(
+            Bucket="bucket-page1",
+            CreateBucketConfiguration={"LocationConstraint": "eu-central-1"},
+        )
+        real_s3.create_bucket(
+            Bucket="bucket-page2",
+            CreateBucketConfiguration={"LocationConstraint": "eu-central-1"},
+        )
+        # bucket-page2 gets no policy at all -> NoSuchBucketPolicy -> compliant
+
+        fake_paginator = MagicMock()
+        fake_paginator.paginate.return_value = [
+            {"Buckets": [{"Name": "bucket-page1"}]},
+            {"Buckets": [{"Name": "bucket-page2"}]},
+        ]
+
+        real_get_paginator = real_s3.get_paginator
+
+        def get_paginator(operation_name):
+            if operation_name == "list_buckets":
+                return fake_paginator
+            return real_get_paginator(operation_name)
+
+        real_s3.get_paginator = get_paginator  # type: ignore[method-assign]
+
+        real_client = session.client
+
+        def client(service: str, region: str | None = None):
+            if service == "s3":
+                return real_s3
+            return real_client(service, region=region)
+
+        session.client = client  # type: ignore[method-assign]
+
+        policy_doc = {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Principal": "*",
+                    "Action": "s3:GetObject",
+                    "Resource": "arn:aws:s3:::bucket-page1/*",
+                }
+            ],
+        }
+        real_s3.put_bucket_policy(Bucket="bucket-page1", Policy=json.dumps(policy_doc))
+
+        check = CheckS3BucketPolicy()
+        result = asyncio.run(check.execute(session))
+
+        page1_findings = [f for f in result.findings if "bucket-page1" in f.resource_id]
+        page2_findings = [f for f in result.findings if "bucket-page2" in f.resource_id]
+        assert len(page1_findings) == 1
+        assert page1_findings[0].status == FindingStatus.NON_COMPLIANT
+        assert len(page2_findings) == 1
+        assert page2_findings[0].status == FindingStatus.COMPLIANT
+
+    @mock_aws
     def test_api_error_produces_check_error_no_finding(self, monkeypatch):
         session = _make_session()
         s3 = session.client("s3")
@@ -494,7 +559,7 @@ class TestCheckS3BucketPolicy:
 
         assert not result.findings
         assert len(result.errors) == 1
-        assert result.errors[0].error_type == "CheckError"
+        assert result.errors[0].error_type == "RuntimeError"
 
 
 class TestCheckS3PublicAccessBlock:

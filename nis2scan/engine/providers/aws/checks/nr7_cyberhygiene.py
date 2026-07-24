@@ -177,7 +177,7 @@ class CheckIamPasswordPolicy(BaseCheck):
             errors.append(
                 CheckError(
                     message=f"IAM Password Policy Check fehlgeschlagen: {e}",
-                    error_type="CheckError",
+                    error_type=type(e).__name__,
                 )
             )
 
@@ -259,7 +259,7 @@ class CheckRootAccessKeys(BaseCheck):
             errors.append(
                 CheckError(
                     message=f"Root Access Keys Check fehlgeschlagen: {e}",
-                    error_type="CheckError",
+                    error_type=type(e).__name__,
                 )
             )
 

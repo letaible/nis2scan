@@ -297,6 +297,26 @@ class TestCheckStorageBucketPublicAccess:
         assert len(result.errors) == 1
         assert result.errors[0].error_type == "RuntimeError"
 
+    def test_bucket_with_unreadable_iam_policy_produces_error_not_finding(self, storage_client: MagicMock):
+        # FIX4 (ADR-0016): a bucket whose IAM policy can't be read is an
+        # unknown state, not a silent skip — it must surface as a CheckError
+        # (with bucket/project/region context) and must never yield a
+        # COMPLIANT finding for that bucket. Other buckets are unaffected.
+        def raise_get_iam_policy():
+            raise RuntimeError("permission denied")
+
+        broken_bucket = SimpleNamespace(name="broken-bucket", location="EU", get_iam_policy=raise_get_iam_policy)
+        storage_client.list_buckets.return_value = [broken_bucket, self._bucket(["user:a@example.com"])]
+
+        result = asyncio.run(CheckStorageBucketPublicAccess().execute(FakeGcpSession()))
+
+        assert len(result.errors) == 1
+        assert result.errors[0].error_type == "RuntimeError"
+        assert "broken-bucket" in result.errors[0].message
+        assert result.errors[0].region == "EU"
+        assert not any("broken-bucket" in f.resource_id for f in result.findings)
+        assert len(_compliant(result)) == 1
+
 
 class TestCheckOrgConstraints:
     def _session(self, constraints: list[str], enforced: bool = True) -> FakeGcpSession:
