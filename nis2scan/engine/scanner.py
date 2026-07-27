@@ -85,13 +85,29 @@ async def run_scan(
 
     fingerprint_secret = resolve_secret()
     if fingerprint_secret is None:
+        # Fix 5b (hardening audit 27.07.2026): this hint reaches every
+        # customer console, so it must be German prose without internal
+        # ADR jargon — customers do not know what an ADR is.
         logger.warning(
             "scan.no_fingerprint_secret",
-            hint=f"Run 'nis2scan init' or set {SECRET_ENV} for keyed finding fingerprints (ADR-0010)",
+            hint=f"Hinweis: Für stabile Finding-Fingerprints 'nis2scan init' ausführen oder {SECRET_ENV} setzen.",
         )
 
     checks = resolve_checks(config)
     logger.info("scan.started", scan_id=scan_id, check_count=len(checks))
+
+    # Findings-Exceptions (ADR-0026): LOAD the file before the first cloud
+    # call, APPLY after the check loop. Loading late used to mean a file that
+    # broke or vanished after the CLI preflight aborted the scan only AFTER
+    # every cloud API call had already run — burning the whole scan and
+    # violating the exit-64 invariant "usage errors abort before any scan
+    # work" (legal delta review 27.07.2026, Auflage 2).
+    loaded_exceptions = None
+    if config.exceptions_path:
+        # Fail-safe: a broken exceptions file raises ExceptionsFileError here,
+        # which aborts the scan instead of silently proceeding without it
+        # (module docstring, nis2scan.engine.finding_exceptions).
+        loaded_exceptions = load_exceptions_file(Path(config.exceptions_path))
 
     # PERF-2: one session per enabled provider, created ONCE before the check
     # loop — not per check. A fresh session used to mean a real AssumeRole /
@@ -163,12 +179,8 @@ async def run_scan(
     # so JSON, Markdown, PDF and SaaS all share the same exception view. Opt-in
     # only — no exceptions_path means no exceptions are ever applied.
     exceptions_result: ExceptionApplication | None = None
-    if config.exceptions_path:
-        # Fail-safe: a broken exceptions file raises ExceptionsFileError here,
-        # which aborts the scan instead of silently proceeding without it
-        # (module docstring, nis2scan.engine.finding_exceptions).
-        exceptions_file = load_exceptions_file(Path(config.exceptions_path))
-        exceptions_result = apply_exceptions(all_findings, exceptions_file, scan_date=scan_timestamp.date())
+    if loaded_exceptions is not None:
+        exceptions_result = apply_exceptions(all_findings, loaded_exceptions, scan_date=scan_timestamp.date())
         logger.info(
             "scan.exceptions_applied",
             exceptions_file=config.exceptions_path,

@@ -433,11 +433,18 @@ Semantics since v0.1.5:
 | 1 | At least one HIGH severity finding |
 | 2 | At least one CRITICAL severity finding |
 | 3 | Scan not meaningful: every applicable check ended in an error, none passed or failed |
+| 64 | Usage/configuration error (invalid option, missing file) — no scan was run at all |
 
 Exit code 3 only fires when there is truly nothing to report on, for example
 because credentials or permissions are broken and every check errored out. A
 check that genuinely fails (a real defect) still counts as a meaningful
 result and yields exit code 1 or 2, not 3.
+
+Exit code 64 is distinct from all of the above: it means the CLI invocation
+itself was invalid (e.g. an unknown `--provider`, a `--scope` value outside
+1-10, an `--output` path that is a file, or a missing `--config` file) and
+aborts BEFORE any scan runs. Fix the command line/config and re-run — there
+is no scan result to interpret for this exit code.
 
 For CI/CD, gate on the exit code directly, for example:
 
@@ -445,7 +452,10 @@ For CI/CD, gate on the exit code directly, for example:
 nis2scan scan --provider aws --region eu-central-1
 exit_code=$?
 
-if [ "$exit_code" -ge 3 ]; then
+if [ "$exit_code" -eq 64 ]; then
+  echo "Invalid CLI usage or configuration, check the command line/config file"
+  exit 1
+elif [ "$exit_code" -eq 3 ]; then
   echo "Scan produced no usable result, check credentials/permissions"
   exit 1
 elif [ "$exit_code" -ge 1 ]; then

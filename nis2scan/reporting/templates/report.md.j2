@@ -38,6 +38,9 @@
 
 {% if summary.error_checks > 0 %}
 > ⚠️ **{{ summary.error_checks }} Check(s) konnten nicht ausgewertet werden.** Für diese Prüfungen ist der Zustand unbekannt — sie gelten nicht als bestanden (Fail-Safe). Details unter „Prüfabdeckung".
+{% if summary.passed_checks == 0 and summary.failed_checks == 0 and most_common_error_message %}
+> Kein Check konnte ausgewertet werden. Häufigste Fehlermeldung: {{ most_common_error_message }}
+{% endif %}
 {% endif %}
 
 Der Erfüllungsgrad bewertet ausschließlich den cloud-technisch prüfbaren Teilaspekt der jeweiligen §30-Maßnahme. Organisatorische Anforderungen (Richtlinien, Prozesse, Schulungen) sind nicht Gegenstand dieses Scans.
@@ -160,10 +163,10 @@ Jeder ausgeführte Check ist hier aufgeführt — auch fehlgeschlagene und nicht
 {% if error_entries %}
 #### ⚠️ Nicht ausgewertete Checks (Fehler)
 
-| Check-ID | Titel | §30 Nr. | Fehleranzahl |
-|----------|-------|---------|--------------|
+| Check-ID | Titel | §30 Nr. | Fehleranzahl | Fehlermeldung |
+|----------|-------|---------|--------------|----------------|
 {% for entry in error_entries %}
-| {{ entry.check_id }} | {{ entry.title }} | {{ entry.bsig_30_nr }} | {{ entry.error_count }} |
+| {{ entry.check_id }} | {{ entry.title }} | {{ entry.bsig_30_nr }} | {{ entry.error_count }} | {{ entry.error_messages[0] | md_error_cell if entry.error_messages else '' }} |
 {% endfor %}
 
 {% endif %}

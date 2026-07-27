@@ -1,10 +1,13 @@
 """Tests for customer-secret resolution and nis2scan init (ADR-0010)."""
 
+import asyncio
 import os
 import subprocess
 from pathlib import Path
+from unittest import mock
 
 import pytest
+import structlog.testing
 from typer.testing import CliRunner
 
 from nis2scan.engine import secret as secret_module
@@ -154,3 +157,49 @@ class TestInitCommand:
 
         assert result.exit_code == 0
         assert secret_file.read_text(encoding="utf-8").strip() != "existing"
+
+    def test_init_help_has_no_adr_reference(self):
+        """Fix 5c (hardening audit 27.07.2026): customers reading --help do
+        not know what an ADR is — the reference must be gone, the meaning
+        (what the secret is for) must stay."""
+        from nis2scan.cli.cli import app
+
+        result = runner.invoke(app, ["init", "--help"])
+
+        assert result.exit_code == 0
+        assert "ADR" not in result.output
+        assert "NIS2SCAN_SECRET" in result.output
+
+
+class TestNoFingerprintSecretHint:
+    """Fix 5b (hardening audit 27.07.2026): the "no secret configured" hint
+    reaches every customer console via structlog — it used to be English
+    with a bare internal ADR reference customers cannot look up."""
+
+    def test_hint_is_german_and_has_no_adr_reference(self):
+        from nis2scan.engine import scanner as scanner_module
+        from nis2scan.engine.models.config import ScanConfig
+
+        with (
+            mock.patch.object(scanner_module, "resolve_secret", return_value=None),
+            structlog.testing.capture_logs() as logs,
+        ):
+            asyncio.run(scanner_module.run_scan(ScanConfig(bsig_30_scope=[1])))
+
+        hint_events = [e for e in logs if e.get("event") == "scan.no_fingerprint_secret"]
+        assert hint_events, "expected a scan.no_fingerprint_secret warning"
+        hint = hint_events[0]["hint"]
+        assert "ADR" not in hint
+        assert "nis2scan init" in hint
+        assert "NIS2SCAN_SECRET" in hint
+
+    def test_no_hint_when_secret_is_configured(self, secret_file: Path, monkeypatch: pytest.MonkeyPatch):
+        from nis2scan.engine import scanner as scanner_module
+        from nis2scan.engine.models.config import ScanConfig
+
+        monkeypatch.setenv("NIS2SCAN_SECRET", "configured-secret")
+
+        with structlog.testing.capture_logs() as logs:
+            asyncio.run(scanner_module.run_scan(ScanConfig(bsig_30_scope=[1])))
+
+        assert not [e for e in logs if e.get("event") == "scan.no_fingerprint_secret"]

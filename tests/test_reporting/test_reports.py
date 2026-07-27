@@ -131,6 +131,141 @@ class TestMarkdownReport:
         assert "konnten nicht ausgewertet werden" not in report
 
 
+class TestErrorMessagesInReport:
+    """Fix 2 (hardening audit 27.07.2026): the report used to render
+    error_count but never the actual error MESSAGE — the number-one avoidable
+    support question ("why did the check error?") had no answer in the
+    report at all."""
+
+    def test_error_message_shown_truncated_next_to_the_check(self, scan_result):
+        error_entry = next(e for e in scan_result.check_outcomes if e.outcome == CheckOutcome.ERROR)
+        error_entry.error_messages = ["Unable to locate credentials"]
+
+        report = render_report(scan_result)
+
+        assert "Unable to locate credentials" in report
+
+    def test_long_error_message_is_truncated(self, scan_result):
+        error_entry = next(e for e in scan_result.check_outcomes if e.outcome == CheckOutcome.ERROR)
+        error_entry.error_messages = ["x" * 300]
+
+        report = render_report(scan_result)
+
+        assert "x" * 300 not in report
+        assert "…" in report
+
+    def test_pipe_in_error_message_does_not_break_table(self, scan_result):
+        error_entry = next(e for e in scan_result.check_outcomes if e.outcome == CheckOutcome.ERROR)
+        error_entry.error_messages = ["broken | table cell"]
+
+        report = render_report(scan_result)
+
+        assert "broken \\| table cell" in report
+
+    def test_no_error_message_column_entry_without_messages(self, scan_result):
+        # The existing fixture's error entry has error_count=1 but no
+        # error_messages (pre-Fix-2 data shape) — must render an empty cell,
+        # not crash.
+        report = render_report(scan_result)
+
+        assert "Nicht ausgewertete Checks (Fehler)" in report
+
+    def test_most_common_error_message_sentence_when_scan_is_inconclusive(self):
+        from nis2scan.engine.models.config import CompanyInfo, ScanConfig
+        from nis2scan.engine.models.result import CheckOutcomeEntry, ScanResult
+        from nis2scan.engine.scanner import build_summary
+
+        entries = [
+            CheckOutcomeEntry(
+                check_id="AWS-NR1-001",
+                bsig_30_nr=1,
+                outcome=CheckOutcome.ERROR,
+                error_count=1,
+                error_messages=["Unable to locate credentials"],
+            ),
+            CheckOutcomeEntry(
+                check_id="AWS-NR1-002",
+                bsig_30_nr=1,
+                outcome=CheckOutcome.ERROR,
+                error_count=1,
+                error_messages=["Unable to locate credentials"],
+            ),
+        ]
+        result = ScanResult(
+            scan_id="test-scan-inconclusive",
+            config=ScanConfig(company=CompanyInfo(name="Testfirma GmbH")),
+            summary=build_summary([], [1], entries),
+            findings=[],
+            check_outcomes=entries,
+        )
+
+        report = render_report(result)
+
+        assert "Häufigste Fehlermeldung: Unable to locate credentials" in report
+
+    def test_extern_profile_renders_no_raw_error_messages(self, scan_result):
+        """ADR-0011 locking test (legal delta review 27.07.2026, Auflage 1):
+        under EXTERN neither the new 'Fehlermeldung' table column nor any
+        other render site may leak the raw exception text — apply_profile
+        strips error_messages before build_report_context runs."""
+        from nis2scan.reporting.pseudonymize import ReportProfile
+
+        error_entry = next(e for e in scan_result.check_outcomes if e.outcome == CheckOutcome.ERROR)
+        error_entry.error_messages = ["Unable to locate credentials for arn:aws:iam::123456789012:role/x"]
+
+        report = render_report(scan_result, ReportProfile.EXTERN)
+
+        assert "Unable to locate credentials" not in report
+        # The errored check itself stays visible (ADR-0016) — only the raw
+        # message is stripped; the internal result object is untouched.
+        assert "Nicht ausgewertete Checks (Fehler)" in report
+        assert error_entry.error_messages != []
+
+    def test_extern_profile_renders_no_most_common_error_sentence(self):
+        """ADR-0011 locking test (Auflage 1, second render site): even for an
+        inconclusive scan the 'Häufigste Fehlermeldung' sentence must not
+        appear under EXTERN — the raw message may embed identifiers no
+        finding names."""
+        from nis2scan.engine.models.config import CompanyInfo, ScanConfig
+        from nis2scan.engine.models.result import CheckOutcomeEntry, ScanResult
+        from nis2scan.engine.scanner import build_summary
+        from nis2scan.reporting.pseudonymize import ReportProfile
+
+        entries = [
+            CheckOutcomeEntry(
+                check_id="AWS-NR1-001",
+                bsig_30_nr=1,
+                outcome=CheckOutcome.ERROR,
+                error_count=1,
+                error_messages=["Unable to locate credentials"],
+            ),
+        ]
+        result = ScanResult(
+            scan_id="test-scan-inconclusive-extern",
+            config=ScanConfig(company=CompanyInfo(name="Testfirma GmbH")),
+            summary=build_summary([], [1], entries),
+            findings=[],
+            check_outcomes=entries,
+        )
+
+        report = render_report(result, ReportProfile.EXTERN)
+
+        assert "Häufigste Fehlermeldung" not in report
+        assert "Unable to locate credentials" not in report
+
+    def test_most_common_error_message_sentence_absent_when_a_check_passed(self, scan_result):
+        # scan_result has one PASSED, one FAILED and one ERROR entry — not
+        # inconclusive, so the extra sentence must not appear (it would
+        # falsely suggest the whole scan produced nothing usable) even though
+        # an error message IS present.
+        error_entry = next(e for e in scan_result.check_outcomes if e.outcome == CheckOutcome.ERROR)
+        error_entry.error_messages = ["Unable to locate credentials"]
+
+        report = render_report(scan_result)
+
+        assert "Häufigste Fehlermeldung" not in report
+
+
 class TestAttestierungAndPruefgrenzen:
     def test_attestation_checklist_per_scanned_area(self, scan_result):
         report = render_report(scan_result)
