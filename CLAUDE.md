@@ -271,14 +271,18 @@ Every integration workflow has a 4-step cleanup (always runs):
 
 ## Test-Strategie (Gründer-Vorgabe 24.07.2026, verbindlich)
 
-Testpyramide: Unit (moto/Fakes, jede Check-Logik) → CLI-Paket-Smoke in CI
-(Wheel-Install, Exit-Codes) → Integration gegen echte Cloud (Terraform
-deployt absichtliche Lücken, Checks laufen, destroy+nuke+verify) → CLI-E2E
-gegen echte Infra (geplant: installiertes Paket fährt Kunden-Use-Cases:
-Neuinstallation, Scan, Report, Exceptions) → SaaS-UI-e2e (Playwright,
-kontinuierlich erweitern). Integrationsläufe sollen Release-Gate für
-v*-Tags werden (geplant). Neue Features brauchen Abdeckung auf JEDER
-passenden Ebene, nicht nur Unit.
+Testpyramide (alle Ebenen AKTIV seit 27.07.2026): Unit (moto/Fakes, jede
+Check-Logik) → CLI-Paket-Smoke in CI (tests/test_cli_package/, Marker
+package_smoke, 34 Härtetest-Journeys per subprocess gegen das installierte
+Wheel, Matrix Linux+Windows, jeder Push) → Integration gegen echte Cloud
+(Terraform deployt absichtliche Lücken, Checks laufen, destroy+nuke+verify)
+→ CLI-E2E gegen echte Infra (tests/integration/test_integration_*nr0_cli_
+e2e.py: installiertes Paket fährt Kunden-Use-Cases inkl. Pseudonymisierungs-
+Kanarienvogel und Exceptions-Flow; läuft in den Integrationsworkflows,
+im Release-Gate und wöchentlich per Cron Mo 03/04/05 UTC) → SaaS-UI-e2e
+(Playwright, kontinuierlich erweitern). Integrationsläufe SIND Release-Gate
+für v*-Tags (Notfall-Ausstieg: workflow_dispatch confirm=RELEASE). Neue
+Features brauchen Abdeckung auf JEDER passenden Ebene, nicht nur Unit.
 
 ## Known Pitfalls & Constraints
 
