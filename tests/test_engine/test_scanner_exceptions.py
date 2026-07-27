@@ -134,3 +134,25 @@ def test_broken_exceptions_file_aborts_scan(tmp_path: Path):
 
     with pytest.raises(ExceptionsFileError):
         asyncio.run(run_scan(_scan_config(str(path))))
+
+
+def test_broken_exceptions_file_aborts_before_any_check_runs(tmp_path: Path):
+    """Exit-64 invariant (legal delta review 27.07.2026, Auflage 2): a broken
+    exceptions file must abort the scan BEFORE the first cloud call. Loading
+    used to happen only after the full check loop — a file that broke between
+    CLI preflight and engine load burned the entire scan before failing."""
+    executed: list[str] = []
+
+    class _RecordingCheck(_FakeNonCompliantCheck):
+        async def execute(self, session: object) -> CheckResult:
+            executed.append(self.check_id)
+            return await super().execute(session)
+
+    CheckRegistry.get_instance().register(_RecordingCheck())
+    broken = tmp_path / "exceptions.yaml"
+    broken.write_text("exceptions:\n  - check_id: TST-NR9-001\n", encoding="utf-8")  # missing required fields
+
+    with pytest.raises(ExceptionsFileError):
+        asyncio.run(run_scan(_scan_config(str(broken))))
+
+    assert executed == []

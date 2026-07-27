@@ -26,11 +26,12 @@ from nis2scan.engine.providers.azure import register_all_azure_checks
 from nis2scan.engine.providers.gcp import register_all_gcp_checks
 from nis2scan.engine.scanner import run_scan
 from nis2scan.plugins import PluginError, load_plugins
+from nis2scan.reporting.error_hints import most_common_error_message, truncate_error_message
 from nis2scan.reporting.json_export import export_json
 from nis2scan.reporting.markdown import export_markdown
 
 if TYPE_CHECKING:
-    from nis2scan.engine.models.result import ComplianceSummary
+    from nis2scan.engine.models.result import CheckOutcomeEntry, ComplianceSummary
 
 
 def _reconfigure_stream_encoding(stream: Any) -> None:
@@ -60,16 +61,188 @@ console = Console()
 # canonical CloudProvider enum instead of duplicating a literal list.
 _VALID_PROVIDERS = {p.value.lower() for p in CloudProvider}
 
+# Exit code for usage/configuration errors (EX_USAGE, sysexits.h convention),
+# distinct from the scan-outcome exit codes 0-3 (hardening audit 27.07.2026,
+# founder decision). Every validation below that aborts BEFORE a scan runs
+# uses this code — it must never be confused with exit 3 (a scan that DID
+# run but produced no usable result).
+EX_USAGE = 64
+
 
 def _validate_provider(provider: str) -> None:
-    """Abort with a German error + exit 1 on an unknown --provider value.
+    """Abort with a German error + exit 64 on an unknown --provider value.
 
     Without this, a typo like ``--provider awss`` silently registered zero
     checks and produced an empty 0/0 report at exit 0 (audit finding, Bug 3).
     """
     if provider.lower() not in _VALID_PROVIDERS:
         console.print(f"[red]Unbekannter Provider: {provider}. Erlaubt: aws, azure, gcp[/red]")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=EX_USAGE)
+
+
+def _validate_scope(scope: list[int]) -> None:
+    """Abort with a German error + exit 64 on a §30 area number outside 1-10 (Fix 3b).
+
+    Without this, e.g. ``--scope 15`` passed Typer parsing untouched and
+    crashed deep inside scanner.build_summary() with a raw pydantic
+    ValidationError (ComplianceScore.bsig_30_nr is constrained to 1..10, but
+    ScanConfig.bsig_30_scope itself has no such constraint).
+    """
+    for nr in scope:
+        if nr < 1 or nr > 10:
+            console.print(f"[red]Ungültiger §30-Bereich: {nr}. Erlaubt sind 1 bis 10.[/red]")
+            raise typer.Exit(code=EX_USAGE)
+
+
+def _validate_output_path(output_dir: str) -> None:
+    """Abort with a German error + exit 64 if --output points at an existing FILE (Fix 3c).
+
+    Without this, ``out_path.mkdir(...)`` raised a raw FileExistsError AFTER
+    the full scan had already completed, discarding the scan result.
+    """
+    out_path = Path(output_dir)
+    if out_path.is_file():
+        console.print(f"[red]Der Ausgabepfad {output_dir} ist eine Datei. Bitte ein Verzeichnis angeben.[/red]")
+        raise typer.Exit(code=EX_USAGE)
+
+
+_DEFAULT_CONFIG_PATH = Path("config/default.yaml")
+
+
+def _validate_config_path(config_file: Path) -> None:
+    """Abort with a German error + exit 64 if an EXPLICITLY given --config file is missing (Fix 3e).
+
+    A missing DEFAULT config path stays a silent fall-back to CLI-arg-only
+    config (nothing to warn about — most installs never create a config
+    file). But if the user explicitly points --config at a specific file and
+    that file does not exist, silently ignoring it (the previous behaviour of
+    ``_build_config``'s ``if config_file.exists():``) is audit-critical: the
+    scan runs with defaults the user never intended, without any warning.
+
+    Compares Path objects, not raw strings — on Windows ``str(Path("config/
+    default.yaml"))`` renders with backslashes, so a plain string comparison
+    against the forward-slash default would (wrongly) treat the default
+    itself as "explicitly overridden" on every run.
+    """
+    if config_file != _DEFAULT_CONFIG_PATH and not config_file.exists():
+        console.print(f"[red]Konfigurationsdatei nicht gefunden: {config_file}[/red]")
+        raise typer.Exit(code=EX_USAGE)
+
+
+def _validate_formats(formats: list[str]) -> None:
+    """Abort with a German error + exit 64 on an invalid/unavailable --format, BEFORE the scan (Fix 3d).
+
+    Previously an invalid format, or 'pdf' without the Professional plugin
+    installed, was only discovered AFTER the full (potentially 80s+) scan had
+    already run — and for 'pdf' specifically, no report was written at all
+    despite the scan having completed successfully.
+    """
+    known = {"json", "markdown"}
+    available = known | set(_PLUGINS.report_exporters)
+    for fmt in formats:
+        if fmt in available:
+            continue
+        if fmt == "pdf":
+            console.print(
+                "[yellow]PDF-Reports sind Teil von nis2scan Professional.[/yellow] "
+                "Lizenzkunden installieren das Premium-Plugin (pip install nis2scan-premium). "
+                "Info: https://nis2scan.de/pricing"
+            )
+            raise typer.Exit(code=EX_USAGE)
+        allowed = ", ".join(sorted(available)) + (", pdf (Professional)" if "pdf" not in available else "")
+        console.print(f"[red]Unbekanntes Ausgabeformat: {fmt}. Erlaubt: {allowed}.[/red]")
+        raise typer.Exit(code=EX_USAGE)
+
+
+_EXAMPLE_AWS_REGIONS = ("us-east-1", "eu-central-1", "ap-southeast-1")
+
+
+def _validate_aws_regions(provider: str, regions: list[str]) -> None:
+    """Abort with a German error + exit 64 on an unknown AWS region (Fix 3a).
+
+    Without this, ``--region mars-central-7`` was silently accepted: boto3
+    then hung retrying against a region name that resolves to nothing for
+    ~210s, and — had it somehow returned — a report would claim a fictitious
+    region had been scanned (audit-relevant). AWS-only: Azure/GCP have no
+    comparable static, credential-free region enumeration via their SDKs.
+    """
+    if provider.lower() != "aws":
+        return
+
+    import botocore.session  # lazy import (cloud SDK, Known Pitfalls convention)
+
+    known_regions = set(botocore.session.Session().get_available_regions("ec2"))
+    unknown = [r for r in regions if r not in known_regions]
+    if unknown:
+        examples = ", ".join(_EXAMPLE_AWS_REGIONS)
+        console.print(
+            f"[red]Unbekannte AWS-Region: {', '.join(unknown)}. Beispiele gültiger Regionen: {examples}.[/red]\n"
+            "[dim]Hinweis: Sehr neue AWS-Regionen können ein nis2scan/boto3-Update erfordern.[/dim]"
+        )
+        raise typer.Exit(code=EX_USAGE)
+
+
+# Fix 2 (hardening audit 27.07.2026): known substrings of the credential/config
+# exceptions raised by boto3, azure-identity, and google-auth when no usable
+# credentials are found. Matched case-insensitively against the combined
+# error_messages of a scan's check outcomes.
+_CREDENTIAL_ERROR_SIGNATURES = (
+    "unable to locate credentials",
+    "nocredentialserror",
+    "defaultazurecredential",
+    "your default credentials were not found",
+    # Deliberately NO broad substrings like "could not be resolved" or
+    # "no region": a DNS failure or a missing region would then be presented
+    # as "keine Zugangsdaten gefunden" — a factually wrong cause with wrong
+    # advice. Unmatched cases fall through to the generic branch, which shows
+    # the actual most common error message instead of guessing.
+)
+
+_CREDENTIAL_HINTS = {
+    "aws": (
+        "Ursache: Es wurden keine AWS-Zugangsdaten gefunden.\n"
+        "Nächster Schritt: 'aws configure' ausführen oder AWS_PROFILE setzen.\n"
+        "Die minimal nötigen Leserechte erzeugt 'nis2scan permissions --provider aws'."
+    ),
+    "azure": (
+        "Ursache: Es wurden keine Azure-Zugangsdaten gefunden.\n"
+        "Nächster Schritt: 'az login' ausführen.\n"
+        "Die minimal nötigen Leserechte erzeugt 'nis2scan permissions --provider azure'."
+    ),
+    "gcp": (
+        "Ursache: Es wurden keine GCP-Zugangsdaten gefunden.\n"
+        "Nächster Schritt: 'gcloud auth application-default login' ausführen.\n"
+        "Die minimal nötigen Leserechte erzeugt 'nis2scan permissions --provider gcp'."
+    ),
+}
+
+
+def _print_credential_hint(provider: str, check_outcomes: "list[CheckOutcomeEntry]") -> None:
+    """Print a German explanation of WHY checks errored (Fix 2, hardening audit).
+
+    Without this, a broken-credentials scan surfaced only as an opaque "N
+    Checks mit Fehlern" — the actual boto3/azure-identity/google-auth
+    exception text never reached the console, so users could not self-serve
+    the fix. Called whenever at least one check errored (a superset of the
+    exit-3 "inconclusive scan" case).
+    """
+    all_messages = [msg for entry in check_outcomes for msg in entry.error_messages]
+    if not all_messages:
+        return
+
+    combined = " ".join(all_messages).lower()
+    if any(signature in combined for signature in _CREDENTIAL_ERROR_SIGNATURES):
+        hint = _CREDENTIAL_HINTS.get(provider.lower(), _CREDENTIAL_HINTS["aws"])
+    else:
+        common = most_common_error_message(check_outcomes)
+        if common is None:
+            return
+        hint = (
+            f"Ursache unklar — häufigste Fehlermeldung: {truncate_error_message(common)}\n"
+            f"Die minimal nötigen Leserechte erzeugt 'nis2scan permissions --provider {provider.lower()}'."
+        )
+
+    console.print(f"\n[yellow]Hinweis:[/yellow]\n{hint}")
 
 
 app = typer.Typer(
@@ -130,7 +303,7 @@ def scan(
         ["json", "markdown"],
         "--format",
         "-f",
-        help="Ausgabeformate: json, markdown, pdf",
+        help="Ausgabeformate: json, markdown, pdf (Professional)",
     ),
     profile: str | None = typer.Option(
         None,
@@ -152,7 +325,7 @@ def scan(
     report_profile: str = typer.Option(
         "intern",
         "--report-profile",
-        help="Report-Profil (ADR-0011): intern = Klardaten, extern = pseudonymisiert für Weitergabe",
+        help="Report-Profil: intern = Klardaten, extern = pseudonymisiert für Weitergabe",
     ),
     assume_role_arn: str | None = typer.Option(
         None,
@@ -174,7 +347,18 @@ def scan(
     from nis2scan.engine.finding_exceptions import ExceptionsFileError, find_long_running_rules, load_exceptions_file
     from nis2scan.reporting.pseudonymize import ReportProfile
 
+    # Fix 3 (hardening audit 27.07.2026): all input validation happens BEFORE
+    # the scan starts and BEFORE the banner is printed — every failure here
+    # aborts with exit 64 (EX_USAGE) and a German message. Previously several
+    # of these either crashed with a raw pydantic traceback (scope), only
+    # surfaced AFTER a full scan had run (output path, format), or were
+    # silently ignored altogether (missing --config file).
     _validate_provider(provider)
+    _validate_scope(scope)
+    _validate_output_path(output_dir)
+    _validate_formats(format)
+    _validate_config_path(config_file)
+    _validate_aws_regions(provider, regions)
 
     try:
         # Fix 1 (fail-safe hotfix, P0): this MUST NOT be named `profile` — the
@@ -187,7 +371,7 @@ def scan(
         report_profile_enum = ReportProfile(report_profile.lower())
     except ValueError:
         console.print(f"[red]Ungültiges Report-Profil: {report_profile}. Erlaubt: intern, extern[/red]")
-        raise typer.Exit(code=1) from None
+        raise typer.Exit(code=EX_USAGE) from None
 
     if exceptions is not None:
         # Fail-safe (ADR-0026): validate eagerly so a broken exceptions file
@@ -198,7 +382,7 @@ def scan(
             exceptions_file = load_exceptions_file(exceptions)
         except ExceptionsFileError as e:
             console.print(f"[red]{e}[/red]")
-            raise typer.Exit(code=1) from None
+            raise typer.Exit(code=EX_USAGE) from None
 
         for rule in find_long_running_rules(exceptions_file, datetime.now(UTC).date()):
             console.print(
@@ -206,11 +390,15 @@ def scan(
                 f"12 Monate (bis {rule.expires.isoformat()}) — Wiedervorlage empfohlen.[/yellow]"
             )
 
+    # Fix 5a: the --region default ("eu-central-1") is AWS-specific and means
+    # nothing for Azure/GCP (which scan a subscription/project, not a region
+    # list) — showing it there just confused users into thinking it was used.
+    region_line = f"Regionen: {', '.join(regions)} | " if provider.lower() == "aws" else ""
     console.print(
         Panel.fit(
             f"[bold blue]nis2scan v{__version__}[/bold blue]\n"
             f"NIS2 Cloud Compliance Scanner — §30 BSIG\n"
-            f"Provider: {provider.upper()} | Regionen: {', '.join(regions)} | §30-Scope: {scope}",
+            f"Provider: {provider.upper()} | {region_line}§30-Scope: {scope}",
             title="NIS2 Scan",
         )
     )
@@ -256,15 +444,20 @@ def scan(
             progress.update(task, description="Scan abgeschlossen", completed=True)
     except ExceptionsFileError as e:
         # Defense in depth: run_scan loads the exceptions file again
-        # engine-side (see comment above) and could still fail here, e.g. if
-        # the file changed between the pre-check and scan start.
+        # engine-side. Since the legal delta review 27.07.2026 (Auflage 2)
+        # that load happens BEFORE the first cloud call, so even a file that
+        # broke between the CLI preflight and scan start aborts without
+        # burning the scan — the exit-64 invariant ("usage errors abort
+        # before any scan work") holds on this path too (regression test:
+        # tests/test_engine/test_scanner_exceptions.py).
         console.print(f"[red]{e}[/red]")
-        raise typer.Exit(code=1) from None
+        raise typer.Exit(code=EX_USAGE) from None
 
     # Print summary
     _print_summary(result.summary)
 
-    # Export reports
+    # Export reports. _validate_output_path already confirmed output_dir is
+    # not an existing FILE (Fix 3c) — this mkdir only ever creates directories.
     out_path = Path(output_dir)
     out_path.mkdir(parents=True, exist_ok=True)
 
@@ -296,6 +489,14 @@ def scan(
             console.print(f"[green]{fmt.upper()}-Report:[/green] {report_path}")
         except Exception as e:  # plugin failures must not hide the scan results
             console.print(str(e))
+
+    # Credential-error hint (hardening audit 27.07.2026, not to be confused
+    # with "Fix 2" below — that label predates this change): explain WHY
+    # checks errored, not just that they did. Covers both the exit-3
+    # "inconclusive scan" case below and any scan with at least one errored
+    # check that still produced findings.
+    if result.summary.error_checks > 0:
+        _print_credential_hint(provider, result.check_outcomes)
 
     # Exit-Code-Semantik (Fix 2, fail-safe hotfix):
     #   0 = keine hohen/kritischen Mängel
@@ -329,7 +530,7 @@ def init(
         help="Vorhandenes Secret überschreiben (Achtung: Finding-Fingerprints ändern sich)",
     ),
 ) -> None:
-    """Initialisiert nis2scan: erzeugt und persistiert das NIS2SCAN_SECRET (ADR-0010)."""
+    """Initialisiert nis2scan: erzeugt und persistiert das NIS2SCAN_SECRET."""
     from nis2scan.engine.secret import SECRET_ENV, SECRET_FILE, generate_secret, persist_secret, resolve_secret
 
     if SECRET_FILE.exists() and not force:
@@ -370,7 +571,12 @@ def permissions(
     perms = registry.get_required_permissions(provider.lower())
 
     if format == "json":
-        console.print(json.dumps(perms, indent=2))
+        # Fix 1 (hardening audit 27.07.2026): machine-readable output MUST NOT
+        # go through Rich. Rich wraps output at 80 columns whenever stdout is
+        # not a TTY (e.g. redirected to a file/pipe) — for a single long JSON
+        # line that silently inserts a newline nowhere the JSON grammar
+        # allows one, corrupting the output. Plain print() never wraps.
+        print(json.dumps(perms, indent=2))
     elif format == "terraform":
         generators = {
             "aws": _generate_terraform_policy,
@@ -381,7 +587,12 @@ def permissions(
         if generator is None:
             console.print(f"[red]Terraform-Export für Provider '{provider}' nicht verfügbar.[/red]")
             raise typer.Exit(code=1)
-        console.print(generator(perms))
+        # Fix 1: same reasoning as the json branch above — this used to wrap
+        # single-line HCL string literals (description = "...") and comment
+        # lines mid-string/mid-comment when stdout was not a TTY, producing
+        # invalid HCL (confirmed via `nis2scan permissions --format terraform
+        # > policy.tf`). list output keeps Rich; it is for humans, not tools.
+        print(generator(perms))
     else:
         console.print(f"\n[bold]Benötigte {provider.upper()} Permissions ({len(perms)}):[/bold]\n")
         for perm in perms:
@@ -403,7 +614,15 @@ def _build_config(
     external_id: str | None = None,
     exceptions_path: Path | None = None,
 ) -> ScanConfig:
-    """Build ScanConfig from YAML file and CLI overrides."""
+    """Build ScanConfig from YAML file and CLI overrides.
+
+    A missing ``config_file`` is silently treated as "no YAML overrides" —
+    this is safe ONLY because ``_validate_config_path`` (Fix 3e) already
+    aborted the CLI beforehand if the user EXPLICITLY pointed --config at a
+    file that doesn't exist. The silent skip below is therefore reachable
+    only for the untouched default path (``config/default.yaml``, which most
+    installs never create).
+    """
     config_data: dict[str, Any] = {}
 
     if config_file.exists():

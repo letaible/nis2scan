@@ -173,18 +173,23 @@ class TestExitCodeInconclusiveScan:
 
 class TestProviderValidation:
     """Bug 3: unknown --provider values must abort loudly instead of
-    silently registering zero checks and producing an empty 0/0 report."""
+    silently registering zero checks and producing an empty 0/0 report.
 
-    def test_scan_unknown_provider_exits_1(self) -> None:
+    Exit code 64 (EX_USAGE) since the hardening audit 27.07.2026: an unknown
+    --provider is a usage/configuration error, not a scan outcome — it must
+    not be confused with the severity-based exit codes 0-3.
+    """
+
+    def test_scan_unknown_provider_exits_64(self) -> None:
         result = runner.invoke(app, ["scan", "--provider", "awss"])
 
-        assert result.exit_code == 1
+        assert result.exit_code == 64
         assert "Unbekannter Provider: awss. Erlaubt: aws, azure, gcp" in result.output
 
-    def test_permissions_unknown_provider_exits_1(self) -> None:
+    def test_permissions_unknown_provider_exits_64(self) -> None:
         result = runner.invoke(app, ["permissions", "--provider", "awss"])
 
-        assert result.exit_code == 1
+        assert result.exit_code == 64
         assert "Unbekannter Provider: awss. Erlaubt: aws, azure, gcp" in result.output
 
     @pytest.mark.parametrize("provider", ["aws", "AWS", "azure", "AZURE", "gcp", "GCP"])

@@ -415,3 +415,31 @@ Verlaufsabschnitte (Batches Nr. 4–10) und der Kampagnen-Bilanz.
   Live-UI-Session 24.07.2026 und wurden dort per Hot-Reload mitverfolgt).
   Sollte der Gründer UI-Texte künftig dem formalen Gate unterstellen,
   gilt das ab dann auch für diese Kategorie.
+
+#### Delta-Review CLI-Härtetest-Fixes — Fehlerursachen-Texte und Exit-64 (2026-07-27)
+
+- Gegenstand (Branch `cli/haertetest-fixes`): Fixpaket aus dem
+  CLI-Härtetest (5 Kundenreisen gegen echte Clouds, 10 adversarial
+  bestätigte Bugs). Neue deutsche Nutzertexte: Credential-Hinweisblöcke
+  (Ursache/Nächster Schritt je Provider), Fehlermeldungs-Spalte und
+  „Häufigste Fehlermeldung"-Satz im Markdown-Report, sämtliche
+  Vorab-Validierungsmeldungen (Region/Scope/Output/Format/Config,
+  Exit-Code 64 = Bedienfehler, getrennt von der Scan-Semantik 0-3),
+  PDF-Professional-Hinweis vor Scan-Beginn, deutscher
+  Fingerprint-Hinweis ohne ADR-Jargon. Mapping/Checks unverändert.
+- **Zweitprüfung (legal-reviewer): FAIL → 2 Auflagen → umgesetzt →
+  Nachprüfung PASS.** Auflage 1: ADR-0011-Locking-Tests für beide neuen
+  Renderstellen unter EXTERN (rohe Fehlermeldungen dürfen den
+  Extern-Report nie erreichen) — zwei Tests ergänzt. Auflage 2: Die
+  Exit-64-Invariante („Bedienfehler brechen vor jeder Scan-Arbeit ab")
+  galt nicht für den späten Engine-Ladepfad der Exceptions-Datei —
+  behoben durch Verhaltenskorrektur (Laden VOR dem ersten Cloud-Aufruf,
+  Anwendung unverändert nach der Check-Schleife) statt Doku-Abschwächung;
+  Regressionstest beweist executed == [] bei kaputter Datei.
+  Nicht sperrende Hinweise vorgemerkt: tote nocredentialserror-Signatur;
+  %-Beispieltabelle in getting-started.md außerhalb des Deltas.
+- **Gründer-Vermerk: nicht eingeholt** (technisch-operative Fehler- und
+  Bedientexte, keine rechtlich formulierenden Reporttexte; Mapping und
+  Checks unverändert — Einordnung analog Vorsorge-Review SaaS-UI-Texte
+  2026-07-25). Transparenz: Merge erfolgt auf dieser Grundlage; der
+  Gründer kann die Einordnung nachträglich verwerfen.

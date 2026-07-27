@@ -6,6 +6,7 @@ from nis2scan.engine.mapping.bsig_30 import BSIG_30_BY_NR
 from nis2scan.engine.models.check import CheckOutcome
 from nis2scan.engine.models.finding import Finding, FindingStatus, Severity
 from nis2scan.engine.models.result import Erfuellungsgrad, ScanResult
+from nis2scan.reporting.error_hints import most_common_error_message, truncate_error_message
 from nis2scan.reporting.labels import (
     ERFUELLUNGSGRAD_LABELS,
     FINDING_STATUS_LABELS,
@@ -92,6 +93,13 @@ def build_report_context(result: ScanResult, profile: ReportProfile = ReportProf
     )
     effective_erfuellt_total = strict_erfuellt_total + len(effective_erfuellt_area_nrs)
 
+    # Fix 2 (hardening audit 27.07.2026): surface WHY checks errored, not just
+    # that they did. `raw_message` stays None under the EXTERN profile — that
+    # profile already strips CheckOutcomeEntry.error_messages (pseudonymize.py)
+    # because raw exception text may embed identifiers no finding names.
+    raw_message = most_common_error_message(result.check_outcomes)
+    most_common_error = truncate_error_message(raw_message) if raw_message else None
+
     company = result.config.company
     return {
         "result": result,
@@ -117,4 +125,5 @@ def build_report_context(result: ScanResult, profile: ReportProfile = ReportProf
         "finding_status_labels": FINDING_STATUS_LABELS,
         "nis2_category_label": NIS2_CATEGORY_LABELS.get(company.nis2_category, company.nis2_category),
         "report_profile_label": REPORT_PROFILE_LABELS.get(profile, str(profile)),
+        "most_common_error_message": most_common_error,
     }

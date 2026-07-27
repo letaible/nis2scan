@@ -1,5 +1,10 @@
 """CLI tests for --exceptions (ADR-0026): fail-safe abort on a broken file,
-and the Wiedervorlage warning for long-running exceptions."""
+and the Wiedervorlage warning for long-running exceptions.
+
+Exit code 64 (EX_USAGE) since the hardening audit 27.07.2026: a broken or
+missing --exceptions file is a usage/configuration error, not a scan
+outcome — it must not be confused with the severity-based exit codes 0-3.
+"""
 
 from pathlib import Path
 
@@ -28,7 +33,7 @@ class TestExceptionsCliErrorPath:
 
         result = runner.invoke(app, ["scan", "--provider", "aws", "--exceptions", str(path)])
 
-        assert result.exit_code == 1
+        assert result.exit_code == 64
         assert "Ausnahmen-Datei ungültig" in result.output
 
     def test_broken_yaml_aborts(self, tmp_path: Path):
@@ -37,7 +42,7 @@ class TestExceptionsCliErrorPath:
 
         result = runner.invoke(app, ["scan", "--provider", "aws", "--exceptions", str(path)])
 
-        assert result.exit_code == 1
+        assert result.exit_code == 64
         assert "Ausnahmen-Datei ungültig" in result.output
 
     def test_missing_file_aborts(self, tmp_path: Path):
@@ -45,7 +50,7 @@ class TestExceptionsCliErrorPath:
             app, ["scan", "--provider", "aws", "--exceptions", str(tmp_path / "does-not-exist.yaml")]
         )
 
-        assert result.exit_code == 1
+        assert result.exit_code == 64
         assert "nicht lesbar" in result.output
 
 
