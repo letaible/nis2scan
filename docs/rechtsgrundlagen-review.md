@@ -481,3 +481,24 @@ Verlaufsabschnitte (Batches Nr. 4–10) und der Kampagnen-Bilanz.
   Import im SecureScoreItem-Guard.
 - **Gründer-Vermerk: ERTEILT (Chat-Freigabe 27.07.2026 „Beide erteilen").**
   Beide Vermerke liegen vor — Merge frei.
+
+#### Review GCP-Real-Scan-Fixes — 9 nie-funktionierende Checks (2026-07-27)
+
+- Gegenstand (Branch `gcp/real-scan-fixes`): Der erste CLI-E2E-Vollscan
+  gegen echtes GCP deckte 9 Checks auf, deren API-Aufrufe in keiner
+  Umgebung je funktionierten (Mock-Drift kaschierte es): NR1-004,
+  NR4-004, NR5-004, NR6-003, NR8-001, NR9-003, NR9-007, NR10-002/003/004.
+  Fixes ausschließlich an API-Call-Formen (Discovery-Pfade, Proto-Felder,
+  Location-Enumeration mit Fail-safe je Location); jeder Fix read-only
+  gegen das echte Projekt verifiziert; Real-Shape-Guard-Tests gegen
+  künftige Mock-Drift. Finding-Rechtstexte zeichengleich.
+- **Zweitprüfung (legal-reviewer): FAIL → 2 Auflagen (GCP-NR10-005) →
+  umgesetzt → Nachprüfung PASS.** Auflage 1: Die neue CheckError-Meldung
+  behauptete "erfordert Cloud Identity Premium" — sachlich falsch (Free
+  genügt für die Groups-API; gegen Google-Doku belegt; dieselbe
+  Formulierung war in W4 Batch 10 schon einmal ausgemustert) → Tier-
+  Nennung entfernt. Auflage 2: Signatur "invalid argument" zu breit
+  (Maskierungsrisiko für echte Defekte) → Konjunktion mit dem
+  cloudidentity-Endpoint + Diskriminierungstest.
+- **Gründer-Vermerk: ERTEILT (Chat-Freigabe 27.07.2026 „Vermerk
+  erteilt").** Beide Vermerke liegen vor — Merge frei.
