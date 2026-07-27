@@ -148,10 +148,13 @@ class TestConfigPathValidation:
 
         assert result.exit_code == EX_USAGE, result.output
         # Rich may hard-wrap a long absolute temp-dir path at the CliRunner's
-        # console width (no whitespace to break on, so it can split mid-word)
-        # — assert the filename, not the full path, to stay robust to that.
-        assert "Konfigurationsdatei nicht gefunden" in result.output
-        assert missing_config.name in result.output
+        # console width mid-word — on Linux CI the tmp path is long enough
+        # that even the FILENAME gets split ("my-comp\nany.yaml"). Strip
+        # newlines before asserting so the test checks the message, not
+        # Rich's wrapping behaviour (CI failure 27.07.2026).
+        flat_output = result.output.replace("\n", "")
+        assert "Konfigurationsdatei nicht gefunden" in flat_output
+        assert missing_config.name in flat_output
 
     def test_default_config_missing_is_silently_skipped(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         _succeed_run_scan(monkeypatch)
