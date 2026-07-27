@@ -153,7 +153,7 @@ resource "aws_security_group" "non_compliant" {
   vpc_id      = var.vpc_id
 
   ingress {
-    description = "SSH from anywhere ('gaps') or restricted internal range ('hardened'/'mixed', Task #54 Szenario-Toggle)"
+    description = "SSH from anywhere (gaps) or restricted internal range (hardened/mixed, Task #54 scenario toggle)"
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
