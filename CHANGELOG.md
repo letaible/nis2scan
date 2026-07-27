@@ -7,7 +7,22 @@ stehen in den [GitHub Releases](https://github.com/letaible/nis2scan/releases).
 
 ## Unveröffentlicht
 
+### Sicherheit
+
+- Pseudonymisierung (Extern-Profil): 15 Lücken geschlossen, bei denen
+  Ressourcen- oder Kontonamen aus Azure-/GCP-Sammel-Findings roh im
+  Beschreibungstext des externen Reports erscheinen konnten (AWS war nicht
+  betroffen). Die rechtlich geprüften Reporttexte selbst sind unverändert.
+
 ### Behoben
+
+- 5 Azure-/GCP-Checks repariert, deren SDK-Aufrufe in keiner SDK-Version
+  existierten und die daher bei jedem echten Scan als „Fehler" endeten
+  (AZ-NR6-001 Secure Score, AZ-NR10-003 VPN-Gateway-Abfrage — jetzt mit
+  Fail-safe bei Teilausfällen —, GCP-NR2-004/005 und GCP-NR6-001
+  Logging-Clients). Abhängigkeits-Obergrenzen für azure-mgmt-security und
+  azure-mgmt-monitor (<7.0.0) schützen Neuinstallationen vor
+  inkompatiblen SDK-Versionen.
 
 - CLI-Härtetest-Fixpaket (10 bestätigte Befunde aus Kundenreisen gegen
   echte Clouds): `permissions --format terraform/json` erzeugt bei
