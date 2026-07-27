@@ -1,6 +1,7 @@
 """Shared fixtures for tests/test_cli_package/."""
 
 import os
+from pathlib import Path
 
 import pytest
 
@@ -26,4 +27,12 @@ def smoke_bin() -> str:
             f"{SMOKE_BIN_ENV_VAR}=<Pfad zur nis2scan-Executable> setzen "
             "(siehe Docstring in tests/test_cli_package/__init__.py)."
         )
-    return path
+    # Resolve to an absolute path HERE, while the cwd is still pytest's
+    # invocation directory (repo root): the helpers run the subprocess with
+    # cwd=tmp_path, where a relative path like "smoke-venv/bin/nis2scan"
+    # (as the CI job exports it) raises FileNotFoundError for every test
+    # (CI run 30263415352, both OS legs).
+    resolved = Path(path).resolve()
+    if not resolved.is_file():
+        pytest.fail(f"{SMOKE_BIN_ENV_VAR} zeigt auf keine existierende Datei: {path} (aufgelöst: {resolved})")
+    return str(resolved)
