@@ -11,25 +11,24 @@ TF_OUTPUTS_PATH = Path(__file__).parent / "tf_outputs.json"
 AZ_TF_OUTPUTS_PATH = Path(__file__).parent / "az_tf_outputs.json"
 GCP_TF_OUTPUTS_PATH = Path(__file__).parent / "gcp_tf_outputs.json"
 
-# --- Scenario support (Task #54, Gründer-Vorgabe 27.07.2026) ---------------
-# The AWS Terraform test infrastructure (infra/aws/) supports three scenarios
-# (variable "scenario" in infra/aws/variables.tf): "gaps" (today's behaviour,
-# all intentional gaps open), "hardened" (every supported gap closed), and
-# "mixed" (a deterministic, hand-assigned split — see infra/aws/main.tf::
-# local.fixture_compliance_mixed). The GCP infra (infra/gcp/) got the same
-# three-scenario model ported onto its much smaller set of togglable
-# fixtures (see infra/gcp/main.tf::local.fixture_compliance_mixed and the
-# scope note in infra/gcp/outputs.tf) — both providers read the SAME
-# NIS2SCAN_SCENARIO environment variable, set by the matching CI workflow's
-# scenario matrix.
+# --- Scenario support, alle drei Provider (Task #54, Gründer-Vorgabe 27.07.2026) ---
+# The AWS, Azure and GCP Terraform test infrastructures (infra/aws/,
+# infra/azure/, infra/gcp/) all support three scenarios (variable "scenario"
+# in infra/{aws,azure,gcp}/variables.tf): "gaps" (today's behaviour, all
+# intentional gaps open), "hardened" (every supported gap closed), and
+# "mixed" (a deterministic, hand-assigned split — see the respective
+# main.tf::local.fixture_compliance_mixed and the scope notes in each
+# outputs.tf). All three providers read the SAME NIS2SCAN_SCENARIO env var
+# (set by the matching CI workflow's scenario matrix) and share this ONE
+# marker below — there is no per-provider variant.
 #
-# Every AWS/GCP integration test file EXCEPT test_integration_nr0_scenarios.py
-# / test_integration_gcp_nr0_scenarios.py (which read their expectations from
-# the Terraform output "fixture_expectations" instead of hard-coding them)
-# and test_integration_nr0_cli_e2e.py / test_integration_gcp_nr0_cli_e2e.py
-# (whose assertions are already scenario-tolerant — see their own scenario-
-# aware asserts) is hard-wired to the "gaps" state: they compare literal
-# severities/resource states that only hold when every gap is open. Applying
+# Every legacy integration test file EXCEPT the per-provider
+# test_integration_*nr0_scenarios.py files (which read their expectations
+# from the Terraform output "fixture_expectations" instead of hard-coding
+# them) and the test_integration_*nr0_cli_e2e.py files (whose assertions are
+# already scenario-tolerant — see their own scenario-aware asserts) is
+# hard-wired to the "gaps" state: they compare literal severities/resource
+# states that only hold when every gap is open. Applying
 # SKIP_UNLESS_GAPS_SCENARIO as a module-level ``pytestmark`` in those files
 # skips them cleanly whenever NIS2SCAN_SCENARIO is set to anything other than
 # "gaps" (or left unset — "gaps" is the default, matching local dev runs and
@@ -42,8 +41,9 @@ SKIP_UNLESS_GAPS_SCENARIO = pytest.mark.skipif(
         f"NIS2SCAN_SCENARIO={INTEGRATION_SCENARIO!r} != 'gaps': diese Tests sind fest auf den "
         "urspruenglichen Luecken-Zustand verdrahtet und gelten nur fuer das Szenario 'gaps'. "
         "Szenario-bewusste Assertions fuer 'hardened'/'mixed' siehe "
-        "test_integration_nr0_scenarios.py (AWS) bzw. test_integration_gcp_nr0_scenarios.py (GCP), "
-        "die ihre Erwartungen aus dem jeweiligen Terraform-Output 'fixture_expectations' lesen."
+        "test_integration_nr0_scenarios.py (AWS), test_integration_az_nr0_scenarios.py (Azure) "
+        "bzw. test_integration_gcp_nr0_scenarios.py (GCP), die ihre Erwartungen aus dem "
+        "jeweiligen Terraform-Output 'fixture_expectations' lesen."
     ),
 )
 

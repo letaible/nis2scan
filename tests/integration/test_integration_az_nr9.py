@@ -6,6 +6,10 @@ are configured, all tests are skipped via the azure_session fixture.
 
 import pytest
 
+from tests.integration.conftest import SKIP_UNLESS_GAPS_SCENARIO
+
+pytestmark = SKIP_UNLESS_GAPS_SCENARIO
+
 
 @pytest.mark.integration
 class TestCheckConditionalAccess:
