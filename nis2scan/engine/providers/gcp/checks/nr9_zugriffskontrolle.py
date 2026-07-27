@@ -237,6 +237,12 @@ class CheckServiceAccountHygiene(BaseCheck):
                                     current_state={
                                         "key_age_days": age_days,
                                         "max_allowed_days": MAX_SA_KEY_AGE_DAYS,
+                                        # key_id (the API's key "name") is a full path
+                                        # projects/<P>/serviceAccounts/<EMAIL>/keys/<KID>
+                                        # — its resource_id tail is only the hex <KID>,
+                                        # never the customer-chosen local part of the
+                                        # e-mail. Suffix _email (ADR-0011 deny-list).
+                                        "service_account_email": sa_email,
                                     },
                                     expected_state=(
                                         f"Service-Account-Schlüssel nicht älter als {MAX_SA_KEY_AGE_DAYS} Tage"
@@ -272,6 +278,10 @@ class CheckServiceAccountHygiene(BaseCheck):
                                     current_state={
                                         "key_age_days": age_days,
                                         "max_allowed_days": MAX_SA_KEY_AGE_DAYS,
+                                        # Same rationale as the compliant branch above:
+                                        # sa_id/sa_email is not covered by the resource_id
+                                        # tail (that's the key ID, not the e-mail).
+                                        "service_account_email": sa_id,
                                     },
                                     expected_state=(
                                         f"Service-Account-Schlüssel nicht älter als {MAX_SA_KEY_AGE_DAYS} Tage"
@@ -965,6 +975,14 @@ class CheckInactivePrincipals(BaseCheck):
                             current_state={
                                 "recommendation_subtype": rec.get("recommenderSubtype", ""),
                                 "priority": rec.get("priority", ""),
+                                # Full Recommender resource name (ADR-0011): the
+                                # Recommender API's canonical name has been observed
+                                # to echo the numeric project NUMBER rather than the
+                                # configured project ID, which would otherwise be an
+                                # uncovered, equally identifying value. Covering the
+                                # whole name here closes the gap regardless of which
+                                # form the API returns.
+                                "recommendation_name": rec_id,
                             },
                             expected_state=("Keine ungenutzten Zugriffsberechtigungen für inaktive Principals"),
                             remediation=(

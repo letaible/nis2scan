@@ -314,7 +314,17 @@ class CheckNsgOpenAccess(BaseCheck):
                                 resource_id=nsg.id or f"/subscriptions/{sub_id}",
                                 resource_type="Microsoft.Network/networkSecurityGroups",
                                 account_id=sub_id,
-                                current_state={"open_inbound_rules": open_rules[:10]},
+                                current_state={
+                                    "open_inbound_rules": open_rules[:10],
+                                    # rule_summary above interpolates customer-chosen
+                                    # NSG rule names into the description; the dict
+                                    # list above is not collected (_collect_identifiers
+                                    # only reads strings/lists-of-strings under a
+                                    # suffixed key, never nested dict values). Suffix
+                                    # key with a plain string list (ADR-0011);
+                                    # _replace_in_state still rewrites the dicts too.
+                                    "open_inbound_rule_name": [r["name"] for r in open_rules[:10]],
+                                },
                                 expected_state="Keine Inbound-Regeln mit Source 0.0.0.0/0 oder *",
                                 remediation=(
                                     f"Schränken Sie die Quell-IP-Bereiche ein: "
@@ -419,7 +429,15 @@ class CheckStoragePublicAccess(BaseCheck):
                             resource_id=f"/subscriptions/{sub_id}",
                             resource_type="Microsoft.Storage/storageAccounts",
                             account_id=sub_id,
-                            current_state={"public_access_accounts": len(public_accounts)},
+                            current_state={
+                                "public_access_accounts": len(public_accounts),
+                                # The description above interpolates the first 5
+                                # storage account names via ", ".join(public_accounts).
+                                # resource_id/account_id here only cover the
+                                # subscription. Suffix key (ADR-0011) so the full
+                                # list of account names gets pseudonymized.
+                                "public_account_name": public_accounts,
+                            },
                             expected_state="Alle Storage Accounts mit deaktiviertem öffentlichen Zugriff",
                             remediation=(
                                 "Deaktivieren Sie öffentlichen Zugriff: "

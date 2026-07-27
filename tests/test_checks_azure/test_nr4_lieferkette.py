@@ -221,3 +221,22 @@ class TestCheckMarketplaceImageTrust:
 
         assert len(_maengel(result)) == 1
         assert not _compliant(result)
+
+    def test_untrusted_vm_name_is_pseudonymized_on_extern_export(self):
+        # ADR-0011: vm_summary interpolates VM names into the description;
+        # resource_id/account_id here only cover the subscription.
+        session = FakeAzureSession({"ComputeManagementClient": self._compute_client("shady-images-inc")})
+
+        result = asyncio.run(CheckMarketplaceImageTrust().execute(session))
+        finding = _maengel(result)[0]
+
+        assert finding.current_state["untrusted_vm_name"] == ["vm-1"]
+
+        from nis2scan.engine.models.config import ScanConfig
+        from nis2scan.engine.models.result import ScanResult
+        from nis2scan.reporting.pseudonymize import pseudonymize_result
+
+        scan_result = ScanResult(scan_id="test", config=ScanConfig(), findings=[finding])
+        pseudonymized = pseudonymize_result(scan_result).findings[0]
+        assert "vm-1" not in pseudonymized.description
+        assert pseudonymized.current_state["untrusted_vm_name"][0].startswith("pseu_")

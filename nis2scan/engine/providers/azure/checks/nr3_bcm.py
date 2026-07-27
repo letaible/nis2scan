@@ -148,7 +148,17 @@ class CheckBackupVaults(BaseCheck):
                                 resource_id=f"/subscriptions/{sub_id}",
                                 resource_type="Microsoft.RecoveryServices/vaults",
                                 account_id=sub_id,
-                                current_state={"vaults_without_policies": vaults_without_policies},
+                                current_state={
+                                    # Key renamed to a Deny-List suffix (ADR-0011):
+                                    # the list carries customer-chosen vault names,
+                                    # interpolated into the description above.
+                                    # Deliberately SINGULAR ("_name", not "_names") —
+                                    # the deny-list regex requires the key to END in
+                                    # _name, so a later "grammar fix" to the plural
+                                    # would silently reopen the leak (see the
+                                    # GCP-NR4-001 external_member_email precedent).
+                                    "vault_without_policy_name": vaults_without_policies,
+                                },
                                 expected_state="Alle Backup Vaults mit mindestens einer Backup-Policy",
                                 remediation=(
                                     "Erstellen Sie Backup-Policies für Ihre Vaults: "
@@ -241,7 +251,15 @@ class CheckSqlBackupRetention(BaseCheck):
                                             resource_id=db.id or f"{server.id}/databases/{db.name}",
                                             resource_type="Microsoft.Sql/servers/databases",
                                             account_id=sub_id,
-                                            current_state={"retention_days": policy.retention_days},
+                                            current_state={
+                                                "retention_days": policy.retention_days,
+                                                # server.name is interpolated into the
+                                                # description above; resource_id's tail
+                                                # is only the database name, so the
+                                                # server name needs its own suffix key
+                                                # (ADR-0011).
+                                                "server_name": server.name,
+                                            },
                                             expected_state=f"Backup-Retention ≥ {self.MIN_RETENTION_DAYS} Tage",
                                             audit_evidence=(
                                                 f"backup_short_term_retention_policies: "
@@ -269,7 +287,17 @@ class CheckSqlBackupRetention(BaseCheck):
                                             resource_id=db.id or f"{server.id}/databases/{db.name}",
                                             resource_type="Microsoft.Sql/servers/databases",
                                             account_id=sub_id,
-                                            current_state={"retention_days": policy.retention_days},
+                                            current_state={
+                                                "retention_days": policy.retention_days,
+                                                # server.name (description) and rg_name
+                                                # (remediation az-CLI command) are both
+                                                # freestanding tokens, not covered by
+                                                # resource_id's tail (database name) or
+                                                # account_id (sub_id) — suffix keys per
+                                                # ADR-0011 so both get pseudonymized.
+                                                "server_name": server.name,
+                                                "resource_group_name": rg_name,
+                                            },
                                             expected_state=f"Backup-Retention ≥ {self.MIN_RETENTION_DAYS} Tage",
                                             remediation=(
                                                 "Erhöhen Sie die Backup-Aufbewahrung: "
@@ -383,7 +411,14 @@ class CheckGeoRedundantStorage(BaseCheck):
                             current_state={
                                 "non_geo_redundant_accounts": [
                                     {"name": a["name"], "sku": a["sku"]} for a in non_geo_accounts
-                                ]
+                                ],
+                                # Additional suffix-key with a plain string list
+                                # (ADR-0011): _collect_identifiers only picks up
+                                # strings/lists-of-strings under a _name/_id/_arn/
+                                # _email key, never the names nested inside the
+                                # dicts above. _replace_in_state still rewrites the
+                                # dicts too, once these names are in the mapping.
+                                "non_geo_redundant_account_name": [a["name"] for a in non_geo_accounts],
                             },
                             expected_state="Alle Storage Accounts mit GRS, RAGRS, GZRS oder RAGZRS",
                             remediation=(

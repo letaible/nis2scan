@@ -115,6 +115,55 @@ class TestCheckServiceAccountHygiene:
         assert len(result.errors) == 1
         assert result.errors[0].error_type == "RuntimeError"
 
+    def _session_with_email(self, email: str, keys: list[dict]) -> FakeGcpSession:
+        svc = MagicMock()
+        sa_chain = svc.projects.return_value.serviceAccounts.return_value
+        sa_chain.list.return_value.execute.return_value = {
+            "accounts": [{"email": email, "name": "projects/p/serviceAccounts/sa"}]
+        }
+        sa_chain.keys.return_value.list.return_value.execute.return_value = {"keys": keys}
+        return FakeGcpSession(services={"iam": svc})
+
+    def test_fresh_key_sa_email_is_pseudonymized_on_extern_export(self):
+        # ADR-0011: key["name"] (the API's key "name") is a full path
+        # projects/<P>/serviceAccounts/<EMAIL>/keys/<KID> — resource_id's
+        # tail is only the hex <KID>, never the customer-chosen local part
+        # of the e-mail, which the description also interpolates directly.
+        member_email = f"deploy-bot@{PROJECT_ID}.iam.gserviceaccount.com"
+        session = self._session_with_email(member_email, [self._key(age_days=10)])
+
+        result = asyncio.run(CheckServiceAccountHygiene().execute(session))
+        finding = _compliant(result)[0]
+
+        assert finding.current_state["service_account_email"] == member_email
+
+        from nis2scan.engine.models.config import ScanConfig
+        from nis2scan.engine.models.result import ScanResult
+        from nis2scan.reporting.pseudonymize import pseudonymize_result
+
+        scan_result = ScanResult(scan_id="test", config=ScanConfig(), findings=[finding])
+        pseudonymized = pseudonymize_result(scan_result).findings[0]
+        assert "deploy-bot" not in pseudonymized.description
+        assert pseudonymized.current_state["service_account_email"].startswith("pseu_")
+
+    def test_old_key_sa_email_is_pseudonymized_on_extern_export(self):
+        member_email = f"deploy-bot@{PROJECT_ID}.iam.gserviceaccount.com"
+        session = self._session_with_email(member_email, [self._key(age_days=200)])
+
+        result = asyncio.run(CheckServiceAccountHygiene().execute(session))
+        finding = _maengel(result)[0]
+
+        assert finding.current_state["service_account_email"] == member_email
+
+        from nis2scan.engine.models.config import ScanConfig
+        from nis2scan.engine.models.result import ScanResult
+        from nis2scan.reporting.pseudonymize import pseudonymize_result
+
+        scan_result = ScanResult(scan_id="test", config=ScanConfig(), findings=[finding])
+        pseudonymized = pseudonymize_result(scan_result).findings[0]
+        assert "deploy-bot" not in pseudonymized.description
+        assert pseudonymized.current_state["service_account_email"].startswith("pseu_")
+
 
 class TestCheckIdentityAwareProxy:
     def _session(self, bindings: list[dict]) -> FakeGcpSession:
@@ -443,6 +492,32 @@ class TestCheckInactivePrincipals:
         assert not result.findings
         assert len(result.errors) == 1
         assert result.errors[0].error_type == "RuntimeError"
+
+    def test_recommendation_full_name_is_pseudonymized_on_extern_export(self):
+        # ADR-0011: the Recommender API's canonical "name" has been observed
+        # to echo the numeric project NUMBER rather than the project ID used
+        # to scope the request (Google docs example) — a value as identifying
+        # as account_id but not equal to it, and not covered by resource_id's
+        # UUID tail.
+        rec_name = (
+            "projects/32428390823/locations/global/recommenders/"
+            "google.iam.policy.Recommender/recommendations/a523ff7e-1234"
+        )
+        recs = [{"name": rec_name, "recommenderSubtype": "REMOVE_ROLE", "description": "unused access"}]
+
+        result = asyncio.run(CheckInactivePrincipals().execute(self._session(recs)))
+        finding = _maengel(result)[0]
+
+        assert finding.current_state["recommendation_name"] == rec_name
+
+        from nis2scan.engine.models.config import ScanConfig
+        from nis2scan.engine.models.result import ScanResult
+        from nis2scan.reporting.pseudonymize import pseudonymize_result
+
+        scan_result = ScanResult(scan_id="test", config=ScanConfig(), findings=[finding])
+        pseudonymized = pseudonymize_result(scan_result).findings[0]
+        assert "32428390823" not in pseudonymized.description
+        assert pseudonymized.current_state["recommendation_name"].startswith("pseu_")
 
 
 class TestCheckVpcServiceControls:

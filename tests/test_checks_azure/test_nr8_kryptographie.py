@@ -49,6 +49,26 @@ class TestCheckStorageEncryption:
         assert len(_maengel(result)) == 1
         assert not _compliant(result)
 
+    def test_cmk_missing_account_name_is_pseudonymized_on_extern_export(self):
+        # ADR-0011: the description lists platform-managed-key account names
+        # (live-verified 27.07.2026 against a real EXTERN report); resource_id/
+        # account_id here only cover the subscription.
+        session = FakeAzureSession({"StorageManagementClient": self._client("Microsoft.Storage")})
+
+        result = asyncio.run(CheckStorageEncryption().execute(session))
+        finding = _maengel(result)[0]
+
+        assert finding.current_state["cmk_missing_account_name"] == ["st1"]
+
+        from nis2scan.engine.models.config import ScanConfig
+        from nis2scan.engine.models.result import ScanResult
+        from nis2scan.reporting.pseudonymize import pseudonymize_result
+
+        scan_result = ScanResult(scan_id="test", config=ScanConfig(), findings=[finding])
+        pseudonymized = pseudonymize_result(scan_result).findings[0]
+        assert "st1" not in pseudonymized.description
+        assert pseudonymized.current_state["cmk_missing_account_name"][0].startswith("pseu_")
+
 
 class TestCheckDiskEncryption:
     def _client(self, encrypted: bool) -> MagicMock:
@@ -106,6 +126,58 @@ class TestCheckSqlTde:
 
         assert len(_maengel(result)) == 1
         assert not _compliant(result)
+
+    def _client_with_rg(self, tde_state: str, rg_name: str) -> MagicMock:
+        server_id = f"/subscriptions/{SUB_ID}/resourceGroups/{rg_name}/providers/Microsoft.Sql/servers/srv1"
+        client = MagicMock()
+        client.servers.list.return_value = [
+            SimpleNamespace(name="srv1", id=server_id, location="westeurope"),
+        ]
+        client.databases.list_by_server.return_value = [
+            SimpleNamespace(name="appdb", id=f"{server_id}/databases/appdb"),
+        ]
+        client.transparent_data_encryptions.get.return_value = SimpleNamespace(state=tde_state)
+        return client
+
+    def test_tde_enabled_server_name_is_pseudonymized_on_extern_export(self):
+        # ADR-0011: the description interpolates server.name directly;
+        # resource_id's tail is only the database name.
+        session = FakeAzureSession({"SqlManagementClient": self._client_with_rg("Enabled", "rg-crypto")})
+
+        result = asyncio.run(CheckSqlTde().execute(session))
+        finding = _compliant(result)[0]
+
+        assert finding.current_state["server_name"] == "srv1"
+
+        from nis2scan.engine.models.config import ScanConfig
+        from nis2scan.engine.models.result import ScanResult
+        from nis2scan.reporting.pseudonymize import pseudonymize_result
+
+        scan_result = ScanResult(scan_id="test", config=ScanConfig(), findings=[finding])
+        pseudonymized = pseudonymize_result(scan_result).findings[0]
+        assert "srv1" not in pseudonymized.description
+        assert pseudonymized.current_state["server_name"].startswith("pseu_")
+
+    def test_tde_disabled_server_and_rg_name_are_pseudonymized_on_extern_export(self):
+        # rg_name additionally leaks via the remediation az-CLI command. Uses
+        # a >=3-char rg name — _collect_identifiers drops shorter values.
+        session = FakeAzureSession({"SqlManagementClient": self._client_with_rg("Disabled", "rg-crypto")})
+
+        result = asyncio.run(CheckSqlTde().execute(session))
+        finding = _maengel(result)[0]
+
+        assert finding.current_state["server_name"] == "srv1"
+        assert finding.current_state["resource_group_name"] == "rg-crypto"
+
+        from nis2scan.engine.models.config import ScanConfig
+        from nis2scan.engine.models.result import ScanResult
+        from nis2scan.reporting.pseudonymize import pseudonymize_result
+
+        scan_result = ScanResult(scan_id="test", config=ScanConfig(), findings=[finding])
+        pseudonymized = pseudonymize_result(scan_result).findings[0]
+        assert "srv1" not in pseudonymized.description
+        assert "srv1" not in pseudonymized.remediation
+        assert "rg-crypto" not in pseudonymized.remediation
 
 
 class TestCheckKeyVaultRotation:

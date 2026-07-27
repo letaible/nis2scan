@@ -234,3 +234,31 @@ class TestCheckSqlVulnAssessment:
         assert not result.findings
         assert len(result.errors) == 1
         assert "srv1" in result.errors[0].message
+
+    def test_resource_group_name_is_pseudonymized_on_extern_export(self):
+        # ADR-0011: rg_name is interpolated into the remediation az-CLI
+        # command; resource_id's tail is the server name, never the (mid-path)
+        # resource group. Uses a >=3-char rg name — _collect_identifiers drops
+        # shorter values (_MIN_IDENTIFIER_LEN), so the generic "rg" fixture
+        # elsewhere in this file would not exercise the fix.
+        server_id = f"/subscriptions/{SUB_ID}/resourceGroups/rg-produktion/providers/Microsoft.Sql/servers/srv1"
+        client = MagicMock()
+        client.servers.list.return_value = [
+            SimpleNamespace(name="srv1", id=server_id, location="westeurope"),
+        ]
+        client.server_vulnerability_assessments.list_by_server.return_value = []
+        session = FakeAzureSession({"SqlManagementClient": client})
+
+        result = asyncio.run(CheckSqlVulnAssessment().execute(session))
+        finding = _maengel(result)[0]
+
+        assert finding.current_state["resource_group_name"] == "rg-produktion"
+
+        from nis2scan.engine.models.config import ScanConfig
+        from nis2scan.engine.models.result import ScanResult
+        from nis2scan.reporting.pseudonymize import pseudonymize_result
+
+        scan_result = ScanResult(scan_id="test", config=ScanConfig(), findings=[finding])
+        pseudonymized = pseudonymize_result(scan_result).findings[0]
+        assert "rg-produktion" not in pseudonymized.remediation
+        assert pseudonymized.current_state["resource_group_name"].startswith("pseu_")

@@ -92,7 +92,15 @@ class CheckStorageEncryption(BaseCheck):
                             resource_id=f"/subscriptions/{sub_id}",
                             resource_type="Microsoft.Storage/storageAccounts",
                             account_id=sub_id,
-                            current_state={"platform_managed_accounts": len(platform_managed)},
+                            current_state={
+                                "platform_managed_accounts": len(platform_managed),
+                                # names above is interpolated into the description;
+                                # resource_id/account_id here only cover the
+                                # subscription. Suffix key (ADR-0011) so the storage
+                                # account names get pseudonymized (live-verified
+                                # 2026-07-27 against a real EXTERN report).
+                                "cmk_missing_account_name": [a["name"] for a in platform_managed],
+                            },
                             expected_state="Alle Storage Accounts mit Customer-Managed Keys (CMK)",
                             remediation=(
                                 "Konfigurieren Sie CMK-Verschlüsselung: "
@@ -264,7 +272,15 @@ class CheckSqlTde(BaseCheck):
                                         resource_id=db.id or f"{server.id}/databases/{db.name}",
                                         resource_type="Microsoft.Sql/servers/databases",
                                         account_id=sub_id,
-                                        current_state={"tde_state": str(tde.state)},
+                                        current_state={
+                                            "tde_state": str(tde.state),
+                                            # server.name is interpolated into the
+                                            # description above; resource_id's tail is
+                                            # only the database name. Suffix key
+                                            # (ADR-0011) so the server name gets
+                                            # pseudonymized too.
+                                            "server_name": server.name,
+                                        },
                                         expected_state="TDE aktiviert für alle Datenbanken",
                                         audit_evidence=f"transparent_data_encryptions.get(): state={tde.state}",
                                         iso27001_control="A.8.24 Verwendung von Kryptographie",
@@ -289,7 +305,17 @@ class CheckSqlTde(BaseCheck):
                                         resource_id=db.id or f"{server.id}/databases/{db.name}",
                                         resource_type="Microsoft.Sql/servers/databases",
                                         account_id=sub_id,
-                                        current_state={"tde_state": str(tde.state)},
+                                        current_state={
+                                            "tde_state": str(tde.state),
+                                            # server.name (description) and rg_name
+                                            # (remediation az-CLI command) are both
+                                            # freestanding tokens, not covered by
+                                            # resource_id's tail (database name) or
+                                            # account_id (sub_id) — suffix keys per
+                                            # ADR-0011 so both get pseudonymized.
+                                            "server_name": server.name,
+                                            "resource_group_name": rg_name,
+                                        },
                                         expected_state="TDE aktiviert für alle Datenbanken",
                                         remediation=(
                                             "Aktivieren Sie TDE: az sql db tde set "
