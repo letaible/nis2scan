@@ -6,6 +6,9 @@ from nis2scan.engine.providers.gcp.checks.nr7_cyberhygiene import (
     CheckEssentialContacts,
     CheckOrgSecurityPolicies,
 )
+from tests.integration.conftest import SKIP_UNLESS_GAPS_SCENARIO
+
+pytestmark = SKIP_UNLESS_GAPS_SCENARIO
 
 
 @pytest.mark.integration
