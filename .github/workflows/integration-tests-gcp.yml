@@ -97,7 +97,7 @@ jobs:
       NIS2SCAN_SCENARIO: ${{ matrix.scenario }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: GCP Auth (OIDC)
         uses: google-github-actions/auth@v2
