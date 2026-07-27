@@ -88,25 +88,25 @@ jobs:
           OUTPUT=$(smoke-venv/bin/nis2scan permissions --provider aws --format list)
           echo "$OUTPUT"
           echo "$OUTPUT" | grep -q "iam:"
-      - name: nis2scan scan --provider falsch exits 1 with a German error
+      - name: nis2scan scan --provider falsch exits 64 (usage error) with a German error
         run: |
           set +e
           OUTPUT=$(smoke-venv/bin/nis2scan scan --provider falsch 2>&1)
           EXIT_CODE=$?
           set -e
           echo "$OUTPUT"
-          if [ "$EXIT_CODE" -ne 1 ]; then
-            echo "Expected exit code 1 for an unknown --provider, got $EXIT_CODE"
+          if [ "$EXIT_CODE" -ne 64 ]; then
+            echo "Expected exit code 64 (usage error) for an unknown --provider, got $EXIT_CODE"
             exit 1
           fi
           echo "$OUTPUT" | grep -q "Unbekannter Provider"
-      - name: nis2scan permissions --provider falsch exits 1
+      - name: nis2scan permissions --provider falsch exits 64 (usage error)
         run: |
           set +e
           smoke-venv/bin/nis2scan permissions --provider falsch
           EXIT_CODE=$?
           set -e
-          if [ "$EXIT_CODE" -ne 1 ]; then
-            echo "Expected exit code 1 for an unknown --provider, got $EXIT_CODE"
+          if [ "$EXIT_CODE" -ne 64 ]; then
+            echo "Expected exit code 64 (usage error) for an unknown --provider, got $EXIT_CODE"
             exit 1
           fi
