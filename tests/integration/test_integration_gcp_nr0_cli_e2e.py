@@ -27,6 +27,14 @@ if TYPE_CHECKING:
 
 pytestmark = pytest.mark.integration
 
+# Task #54 (GCP-Portierung des AWS-Musters): this file runs in ALL THREE GCP
+# scenarios (see infra/gcp/variables.tf::scenario), unlike the rest of this
+# package which is fixed to "gaps" (tests/integration/conftest.py::
+# SKIP_UNLESS_GAPS_SCENARIO). Its assertions are already scenario-tolerant
+# EXCEPT the "at least one non_compliant finding" check below, which does not
+# hold in "hardened" (every supported Terraform-fixture gap is closed there).
+_SCENARIO = os.environ.get("NIS2SCAN_SCENARIO", "gaps")
+
 _TIMEOUT_FULL_SCAN = 900
 
 
@@ -151,8 +159,17 @@ class TestGcpCliE2EScanJourney:
         assert report["schema_version"]
         findings = report["findings"]
         assert findings, "Expected at least one finding (deployed Terraform test gaps)"
-        non_compliant = [f for f in findings if f["status"] == "non_compliant"]
-        assert non_compliant, "Expected at least one non_compliant finding from the Terraform test infrastructure"
+
+        if _SCENARIO == "hardened":
+            # Every supported Terraform-fixture gap is closed in "hardened" —
+            # "at least one non_compliant finding" is no longer guaranteed
+            # project-wide (Task #54). Assert the mirror image instead: the
+            # scan must still produce positive (COMPLIANT) evidence.
+            compliant = [f for f in findings if f["status"] == "compliant"]
+            assert compliant, "Expected at least one compliant finding in the 'hardened' scenario"
+        else:
+            non_compliant = [f for f in findings if f["status"] == "non_compliant"]
+            assert non_compliant, "Expected at least one non_compliant finding from the Terraform test infrastructure"
 
         outcomes = report["check_outcomes"]
         assert outcomes, "check_outcomes must not be empty (ADR-0007: every check must stay visible)"

@@ -9,6 +9,9 @@ from nis2scan.engine.providers.gcp.checks.nr4_lieferkette import (
     CheckVpcServiceControlsSupplyChain,
     CheckWorkloadIdentity,
 )
+from tests.integration.conftest import SKIP_UNLESS_GAPS_SCENARIO
+
+pytestmark = SKIP_UNLESS_GAPS_SCENARIO
 
 
 @pytest.mark.integration

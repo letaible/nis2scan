@@ -11,6 +11,9 @@ from nis2scan.engine.providers.gcp.checks.nr3_bcm import (
     CheckGcsVersioning,
     CheckMultiZoneDeployments,
 )
+from tests.integration.conftest import SKIP_UNLESS_GAPS_SCENARIO
+
+pytestmark = SKIP_UNLESS_GAPS_SCENARIO
 
 
 @pytest.mark.integration

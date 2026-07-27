@@ -12,6 +12,9 @@ from nis2scan.engine.providers.gcp.checks.nr9_zugriffskontrolle import (
     CheckVpcFirewallRules,
     CheckVpcServiceControls,
 )
+from tests.integration.conftest import SKIP_UNLESS_GAPS_SCENARIO
+
+pytestmark = SKIP_UNLESS_GAPS_SCENARIO
 
 
 @pytest.mark.integration

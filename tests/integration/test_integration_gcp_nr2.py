@@ -9,6 +9,9 @@ from nis2scan.engine.providers.gcp.checks.nr2_vorfallsbewaltigung import (
     CheckNotificationChannels,
     CheckSccNotifications,
 )
+from tests.integration.conftest import SKIP_UNLESS_GAPS_SCENARIO
+
+pytestmark = SKIP_UNLESS_GAPS_SCENARIO
 
 
 @pytest.mark.integration
