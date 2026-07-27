@@ -5,6 +5,9 @@ import pytest
 from nis2scan.engine.providers.aws.checks.nr6_wirksamkeit import (
     CheckSecurityHubComplianceScore,
 )
+from tests.integration.conftest import SKIP_UNLESS_GAPS_SCENARIO
+
+pytestmark = SKIP_UNLESS_GAPS_SCENARIO
 
 
 @pytest.mark.integration

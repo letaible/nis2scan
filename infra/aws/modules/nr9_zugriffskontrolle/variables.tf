@@ -12,3 +12,8 @@ variable "vpc_id" {
   description = "VPC ID for security group resources"
   type        = string
 }
+
+variable "fixture_compliance" {
+  description = "Szenario-Umschaltung je Fixture-Key (Task #54, siehe root main.tf)"
+  type        = map(bool)
+}

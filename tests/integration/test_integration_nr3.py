@@ -7,6 +7,9 @@ from nis2scan.engine.providers.aws.checks.nr3_bcm import (
     CheckRdsBackupRetention,
     CheckS3Versioning,
 )
+from tests.integration.conftest import SKIP_UNLESS_GAPS_SCENARIO
+
+pytestmark = SKIP_UNLESS_GAPS_SCENARIO
 
 
 @pytest.mark.integration

@@ -34,7 +34,8 @@ resource "aws_ecr_repository" "non_compliant" {
   force_delete         = true
 
   image_scanning_configuration {
-    scan_on_push = false
+    # Task #54 Szenario-Toggle.
+    scan_on_push = var.fixture_compliance["nr5_ecr_scan_on_push"]
   }
 
   tags = {
@@ -102,8 +103,10 @@ resource "aws_lambda_function" "non_compliant_lambda" {
   function_name = "${var.name}-lambda-deprecated"
   role          = aws_iam_role.lambda_exec.arn
   handler       = "index.handler"
-  runtime       = "python3.8"
-  filename      = data.archive_file.lambda_zip.output_path
+  # Task #54 Szenario-Toggle: "hardened"/"mixed" switch to the same current
+  # runtime as the compliant function above.
+  runtime  = var.fixture_compliance["nr5_lambda_runtime"] ? "python3.12" : "python3.8"
+  filename = data.archive_file.lambda_zip.output_path
 
   tags = {
     Name  = "${var.name}-lambda-deprecated"

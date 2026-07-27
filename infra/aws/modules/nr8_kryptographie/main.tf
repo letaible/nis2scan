@@ -66,7 +66,11 @@ resource "aws_ebs_volume" "non_compliant" {
   availability_zone = data.aws_availability_zones.available.names[0]
   size              = 1
   type              = "gp3"
-  encrypted         = false
+  # Task #54 Szenario-Toggle. NOTE: aws_ebs_encryption_by_default stays
+  # disabled at the account level in ALL scenarios (see root main.tf comment)
+  # — only this volume's own encrypted flag moves, so the toggle never
+  # touches account-wide default-encryption behavior for other resources.
+  encrypted = var.fixture_compliance["nr8_ebs_encryption"]
 
   tags = {
     Name  = "${var.name}-ebs-non-compliant-${var.suffix}"
@@ -120,17 +124,27 @@ resource "aws_db_instance" "compliant" {
 }
 
 resource "aws_db_instance" "non_compliant" {
-  identifier              = "${var.name}-rds-non-compliant-${var.suffix}"
-  engine                  = "mysql"
-  instance_class          = "db.t3.micro"
-  allocated_storage       = 20
-  storage_encrypted       = false
-  username                = "admin"
-  password                = random_password.rds_non_compliant.result
-  db_subnet_group_name    = aws_db_subnet_group.this.name
-  skip_final_snapshot     = true
-  backup_retention_period = 0
-  deletion_protection     = false
+  identifier           = "${var.name}-rds-non-compliant-${var.suffix}"
+  engine               = "mysql"
+  instance_class       = "db.t3.micro"
+  allocated_storage    = 20
+  username             = "admin"
+  password             = random_password.rds_non_compliant.result
+  db_subnet_group_name = aws_db_subnet_group.this.name
+  skip_final_snapshot  = true
+  deletion_protection  = false
+
+  # Task #54 Szenario-Toggles. This one RDS instance is the tracked fixture
+  # for THREE independent §30-Checks; each attribute below moves on its own
+  # fixture_compliance key so "mixed" can split them across areas:
+  #   - storage_encrypted       -> AWS-NR8-003 (nr8_rds_encryption)
+  #   - backup_retention_period -> AWS-NR3-001 (nr3_rds_backup_retention)
+  # multi_az (AWS-NR3-004) is intentionally NOT toggled here — stays single-AZ
+  # in all scenarios. Multi-AZ roughly doubles RDS cost and adds significant
+  # provisioning/teardown time; see hardened_supported=false for
+  # nr3_rds_multi_az in ../../outputs.tf.
+  storage_encrypted       = var.fixture_compliance["nr8_rds_encryption"]
+  backup_retention_period = var.fixture_compliance["nr3_rds_backup_retention"] ? 7 : 0
 
   tags = {
     Name  = "${var.name}-rds-non-compliant-${var.suffix}"
@@ -156,8 +170,9 @@ resource "aws_kms_key" "compliant" {
 }
 
 resource "aws_kms_key" "non_compliant" {
-  description             = "${var.name} non-compliant KMS key (rotation disabled)"
-  enable_key_rotation     = false
+  description = "${var.name} non-compliant KMS key (rotation disabled)"
+  # Task #54 Szenario-Toggle.
+  enable_key_rotation     = var.fixture_compliance["nr8_kms_key_rotation"]
   deletion_window_in_days = 7
 
   tags = {
@@ -289,8 +304,12 @@ resource "aws_lb_listener" "non_compliant" {
   load_balancer_arn = aws_lb.non_compliant.arn
   port              = 443
   protocol          = "HTTPS"
-  ssl_policy        = "ELBSecurityPolicy-2016-08"
-  certificate_arn   = aws_acm_certificate.this.arn
+  # Task #54 Szenario-Toggle "nr8_alb_tls_policy": drives BOTH AWS-NR8-005
+  # (deny-list of named insecure policies) and AWS-NR8-006 (protocol-based
+  # TLS >=1.2 check) — both checks read this same ssl_policy string, so they
+  # cannot move independently and share one fixture_compliance key.
+  ssl_policy      = var.fixture_compliance["nr8_alb_tls_policy"] ? "ELBSecurityPolicy-TLS13-1-2-2021-06" : "ELBSecurityPolicy-2016-08"
+  certificate_arn = aws_acm_certificate.this.arn
 
   default_action {
     type = "fixed-response"
