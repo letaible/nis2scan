@@ -52,9 +52,23 @@ jobs:
         run: pip-audit --progress-spinner=off
 
   cli-smoke:
-    name: CLI package smoke test
-    runs-on: ubuntu-latest
+    name: CLI package smoke test (${{ matrix.os }})
     needs: lint-and-test
+    strategy:
+      fail-fast: false
+      matrix:
+        # The manual CLI hardening test 25.-27.07.2026 ran on customer
+        # Windows, but this job previously only ever ran on Linux — the
+        # Windows leg of this matrix closes that gap permanently (cp1252
+        # console encoding, path separators, venv Scripts/ layout, .exe
+        # entry points).
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        # Git Bash on windows-latest runners gives us one shell syntax for
+        # both OSes instead of duplicating every step for pwsh vs bash.
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -65,48 +79,37 @@ jobs:
         run: |
           pip install build
           python -m build
-      - name: Install the wheel into a fresh venv
+      - name: Create the smoke venv
+        # Layout differs between OSes (Scripts/*.exe on Windows vs bin/* on
+        # Linux) — resolve it once into env vars every later step reuses.
+        run: |
+          python -m venv smoke-venv
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            echo "BIN_DIR=smoke-venv/Scripts" >> "$GITHUB_ENV"
+            echo "EXT=.exe" >> "$GITHUB_ENV"
+          else
+            echo "BIN_DIR=smoke-venv/bin" >> "$GITHUB_ENV"
+            echo "EXT=" >> "$GITHUB_ENV"
+          fi
+      - name: Install the built wheel + pytest into the smoke venv
         # Deliberately NOT an editable install (pip install -e .) — the unit
         # test suite already runs against the editable checkout and would not
         # catch packaging bugs (missing package data, entry points, etc.).
         # This installs the actual built artifact, like a real user would
-        # (Audit TEST-P0-Lehre).
+        # (Audit TEST-P0-Lehre). pytest is installed separately since the
+        # smoke venv otherwise carries none of the [dev] extras.
         run: |
-          python -m venv smoke-venv
-          smoke-venv/bin/pip install --upgrade pip
-          smoke-venv/bin/pip install dist/*.whl
-      - name: nis2scan --version reports the package version
-        run: |
-          EXPECTED_VERSION=$(smoke-venv/bin/python -c "from nis2scan import __version__; print(__version__)")
-          OUTPUT=$(smoke-venv/bin/nis2scan --version)
-          echo "$OUTPUT"
-          echo "$OUTPUT" | grep -qF "$EXPECTED_VERSION"
-      - name: nis2scan --help exits 0
-        run: smoke-venv/bin/nis2scan --help
-      - name: nis2scan permissions --provider aws --format list exits 0 and lists IAM permissions
-        run: |
-          OUTPUT=$(smoke-venv/bin/nis2scan permissions --provider aws --format list)
-          echo "$OUTPUT"
-          echo "$OUTPUT" | grep -q "iam:"
-      - name: nis2scan scan --provider falsch exits 64 (usage error) with a German error
-        run: |
-          set +e
-          OUTPUT=$(smoke-venv/bin/nis2scan scan --provider falsch 2>&1)
-          EXIT_CODE=$?
-          set -e
-          echo "$OUTPUT"
-          if [ "$EXIT_CODE" -ne 64 ]; then
-            echo "Expected exit code 64 (usage error) for an unknown --provider, got $EXIT_CODE"
-            exit 1
-          fi
-          echo "$OUTPUT" | grep -q "Unbekannter Provider"
-      - name: nis2scan permissions --provider falsch exits 64 (usage error)
-        run: |
-          set +e
-          smoke-venv/bin/nis2scan permissions --provider falsch
-          EXIT_CODE=$?
-          set -e
-          if [ "$EXIT_CODE" -ne 64 ]; then
-            echo "Expected exit code 64 (usage error) for an unknown --provider, got $EXIT_CODE"
-            exit 1
-          fi
+          "$BIN_DIR/pip$EXT" install --upgrade pip
+          "$BIN_DIR/pip$EXT" install dist/*.whl "pytest>=8.0.0"
+          echo "NIS2SCAN_SMOKE_BIN=$BIN_DIR/nis2scan$EXT" >> "$GITHUB_ENV"
+      - name: Run CLI package smoke tests (real installed wheel, subprocess)
+        # Replaces the previous hand-rolled bash exit-code checks below this
+        # comment (removed): this package covers --version/--help, the
+        # permissions matrix (3 providers x 3 formats, incl. real
+        # file-redirected terraform/json output), a credential-less scan per
+        # provider (asserts exit 3, the German "Ursache" hint block, and the
+        # JSON contract for both report profiles), and the CLI misuse matrix
+        # (exit 64 / EX_USAGE). See tests/test_cli_package/ for the full
+        # journey-by-journey breakdown.
+        run: "$BIN_DIR/python$EXT" -m pytest tests/test_cli_package/ -v -m package_smoke
+        timeout-minutes: 30

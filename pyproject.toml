@@ -131,8 +131,9 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 markers = [
     "integration: marks tests as integration tests requiring real AWS infrastructure (deselect with '-m \"not integration\"')",
+    "package_smoke: marks tests that exercise the INSTALLED wheel via subprocess (requires NIS2SCAN_SMOKE_BIN; individual tests skip without it) (deselect with '-m \"not package_smoke\"')",
 ]
-addopts = "-m 'not integration'"
+addopts = "-m 'not integration and not package_smoke'"
 
 [tool.mypy]
 python_version = "3.12"
