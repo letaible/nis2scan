@@ -93,6 +93,33 @@ class TestCheckBackupVaults:
         assert not result.findings
         assert len(result.errors) == 1
 
+    def test_vault_without_policy_name_is_pseudonymized_on_extern_export(self, backup_client: MagicMock):
+        # ADR-0011: the description joins vault names into a single string;
+        # resource_id/account_id here only cover the subscription. The key
+        # was renamed from "vaults_without_policies" (no deny-list suffix) to
+        # "vault_without_policy_name" so the names get collected and scrubbed.
+        rs_client = MagicMock()
+        rs_client.vaults.list_by_subscription_id.return_value = [
+            SimpleNamespace(name="vault-prod-backups", id=_VAULT_ID),
+        ]
+        backup_client.backup_policies.list.return_value = []
+        session = FakeAzureSession({"RecoveryServicesClient": rs_client})
+
+        result = asyncio.run(CheckBackupVaults().execute(session))
+        finding = _maengel(result)[0]
+
+        assert finding.current_state["vault_without_policy_name"] == ["vault-prod-backups"]
+        assert "vaults_without_policies" not in finding.current_state
+
+        from nis2scan.engine.models.config import ScanConfig
+        from nis2scan.engine.models.result import ScanResult
+        from nis2scan.reporting.pseudonymize import pseudonymize_result
+
+        scan_result = ScanResult(scan_id="test", config=ScanConfig(), findings=[finding])
+        pseudonymized = pseudonymize_result(scan_result).findings[0]
+        assert "vault-prod-backups" not in pseudonymized.description
+        assert all(v.startswith("pseu_") for v in pseudonymized.current_state["vault_without_policy_name"])
+
 
 class TestCheckSqlBackupRetention:
     def _sql_client(self, retention_days: int) -> MagicMock:
@@ -127,6 +154,46 @@ class TestCheckSqlBackupRetention:
         assert len(_maengel(result)) == 1
         assert not _compliant(result)
 
+    def test_sufficient_retention_server_name_is_pseudonymized_on_extern_export(self):
+        # ADR-0011: the description interpolates server.name directly;
+        # resource_id's tail is only the database name (db.id ends in
+        # /databases/<name>), never the server name.
+        session = FakeAzureSession({"SqlManagementClient": self._sql_client(14)})
+
+        result = asyncio.run(CheckSqlBackupRetention().execute(session))
+        finding = _compliant(result)[0]
+
+        assert finding.current_state["server_name"] == "srv-1"
+
+        from nis2scan.engine.models.config import ScanConfig
+        from nis2scan.engine.models.result import ScanResult
+        from nis2scan.reporting.pseudonymize import pseudonymize_result
+
+        scan_result = ScanResult(scan_id="test", config=ScanConfig(), findings=[finding])
+        pseudonymized = pseudonymize_result(scan_result).findings[0]
+        assert "srv-1" not in pseudonymized.description
+        assert pseudonymized.current_state["server_name"].startswith("pseu_")
+
+    def test_short_retention_server_and_rg_name_are_pseudonymized_on_extern_export(self):
+        # rg_name additionally leaks via the remediation az-CLI command.
+        session = FakeAzureSession({"SqlManagementClient": self._sql_client(3)})
+
+        result = asyncio.run(CheckSqlBackupRetention().execute(session))
+        finding = _maengel(result)[0]
+
+        assert finding.current_state["server_name"] == "srv-1"
+        assert finding.current_state["resource_group_name"] == "rg-1"
+
+        from nis2scan.engine.models.config import ScanConfig
+        from nis2scan.engine.models.result import ScanResult
+        from nis2scan.reporting.pseudonymize import pseudonymize_result
+
+        scan_result = ScanResult(scan_id="test", config=ScanConfig(), findings=[finding])
+        pseudonymized = pseudonymize_result(scan_result).findings[0]
+        assert "srv-1" not in pseudonymized.description
+        assert "srv-1" not in pseudonymized.remediation
+        assert "rg-1" not in pseudonymized.remediation
+
 
 class TestCheckGeoRedundantStorage:
     def _storage_client(self, sku: str) -> MagicMock:
@@ -151,6 +218,36 @@ class TestCheckGeoRedundantStorage:
 
         assert len(_maengel(result)) == 1
         assert not _compliant(result)
+
+    def test_non_geo_redundant_account_name_is_pseudonymized_on_extern_export(self):
+        # ADR-0011: the description joins account names into a single string,
+        # and current_state["non_geo_redundant_accounts"] carries them nested
+        # in dicts ({"name": ..., "sku": ...}) — _collect_identifiers never
+        # looks inside dict values, so a plain-string-list suffix key is
+        # needed alongside the existing dict list.
+        client = MagicMock()
+        client.storage_accounts.list.return_value = [
+            SimpleNamespace(name="stacc-finance", sku=SimpleNamespace(name="Standard_LRS")),
+        ]
+        session = FakeAzureSession({"StorageManagementClient": client})
+
+        result = asyncio.run(CheckGeoRedundantStorage().execute(session))
+        finding = _maengel(result)[0]
+
+        assert finding.current_state["non_geo_redundant_account_name"] == ["stacc-finance"]
+
+        from nis2scan.engine.models.config import ScanConfig
+        from nis2scan.engine.models.result import ScanResult
+        from nis2scan.reporting.pseudonymize import pseudonymize_result
+
+        scan_result = ScanResult(scan_id="test", config=ScanConfig(), findings=[finding])
+        pseudonymized = pseudonymize_result(scan_result).findings[0]
+        assert "stacc-finance" not in pseudonymized.description
+        assert "stacc-finance" not in str(pseudonymized.current_state)
+        assert pseudonymized.current_state["non_geo_redundant_account_name"][0].startswith("pseu_")
+        # The dict list is rewritten too — _replace_in_state traverses nested
+        # structures for replacement even though collection never does.
+        assert pseudonymized.current_state["non_geo_redundant_accounts"][0]["name"].startswith("pseu_")
 
 
 class TestCheckAvailabilityZones:

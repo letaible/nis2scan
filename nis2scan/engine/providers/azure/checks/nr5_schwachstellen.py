@@ -540,7 +540,15 @@ class CheckSqlVulnAssessment(BaseCheck):
                                     resource_id=server.id or f"/subscriptions/{sub_id}",
                                     resource_type="Microsoft.Sql/servers",
                                     account_id=sub_id,
-                                    current_state={"vulnerability_assessment": "not configured"},
+                                    current_state={
+                                        "vulnerability_assessment": "not configured",
+                                        # rg_name is interpolated into the remediation
+                                        # az-CLI command; resource_id's tail is the
+                                        # server name, never the (mid-path) resource
+                                        # group, so it needs its own suffix key
+                                        # (ADR-0011).
+                                        "resource_group_name": rg_name,
+                                    },
                                     expected_state="Vulnerability Assessment aktiviert mit periodischen Scans",
                                     remediation=(
                                         "Aktivieren Sie Vulnerability Assessment: "

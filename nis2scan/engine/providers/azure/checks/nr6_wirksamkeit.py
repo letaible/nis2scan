@@ -575,6 +575,12 @@ class CheckDiagnosticSettings(BaseCheck):
                             current_state={
                                 "critical_resources_total": len(critical_resources),
                                 "without_diagnostic_settings": len(resources_without_diag),
+                                # resource_summary above interpolates resource names
+                                # (Key Vaults, SQL servers, storage accounts, NSGs)
+                                # into the description; resource_id/account_id here
+                                # only cover the subscription. Suffix key (ADR-0011)
+                                # so the names get pseudonymized.
+                                "resource_without_diag_name": [r["name"] for r in resources_without_diag],
                             },
                             expected_state="Alle kritischen Ressourcen mit Diagnostic Settings",
                             remediation=(

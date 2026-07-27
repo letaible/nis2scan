@@ -522,7 +522,16 @@ class CheckMarketplaceImageTrust(BaseCheck):
                             resource_id=f"/subscriptions/{sub_id}",
                             resource_type="Microsoft.Compute/virtualMachines",
                             account_id=sub_id,
-                            current_state={"untrusted_image_vms": len(untrusted_vms)},
+                            current_state={
+                                "untrusted_image_vms": len(untrusted_vms),
+                                # vm_summary above interpolates VM names into the
+                                # description; resource_id/account_id here only
+                                # cover the subscription. Suffix key (ADR-0011) so
+                                # the names get pseudonymized. Deliberately SINGULAR
+                                # ("_name") — the deny-list regex matches the key's
+                                # end, so a later plural "fix" would reopen the leak.
+                                "untrusted_vm_name": [v["name"] for v in untrusted_vms],
+                            },
                             expected_state="Nur VMs mit Images von vertrauenswürdigen Publishern",
                             remediation=(
                                 "Überprüfen Sie die Image-Quellen und verwenden Sie nur "

@@ -76,6 +76,47 @@ class TestCheckKmsKeyRotation:
         assert len(_maengel(result)) == 1
         assert not _compliant(result)
 
+    def test_rotated_key_full_path_is_pseudonymized_on_extern_export(self, kms_client: MagicMock):
+        # ADR-0011: the description interpolates the full KMS path including
+        # the customer-chosen key ring name ("kr") — resource_id's tail is
+        # only the key name, so the key ring segment was previously uncovered.
+        key = self._key(rotation_days=90)
+        self._wire(kms_client, key)
+
+        result = asyncio.run(CheckKmsKeyRotation().execute(FakeGcpSession()))
+        finding = _compliant(result)[0]
+
+        assert finding.current_state["kms_key_name"] == key.name
+        assert "keyRings/kr" in finding.description
+
+        from nis2scan.engine.models.config import ScanConfig
+        from nis2scan.engine.models.result import ScanResult
+        from nis2scan.reporting.pseudonymize import pseudonymize_result
+
+        scan_result = ScanResult(scan_id="test", config=ScanConfig(), findings=[finding])
+        pseudonymized = pseudonymize_result(scan_result).findings[0]
+        assert "keyRings/kr" not in pseudonymized.description
+        assert pseudonymized.current_state["kms_key_name"].startswith("pseu_")
+
+    def test_missing_rotation_key_full_path_is_pseudonymized_on_extern_export(self, kms_client: MagicMock):
+        key = self._key(rotation_days=None)
+        self._wire(kms_client, key)
+
+        result = asyncio.run(CheckKmsKeyRotation().execute(FakeGcpSession()))
+        finding = _maengel(result)[0]
+
+        assert finding.current_state["kms_key_name"] == key.name
+        assert "keyRings/kr" in finding.description
+
+        from nis2scan.engine.models.config import ScanConfig
+        from nis2scan.engine.models.result import ScanResult
+        from nis2scan.reporting.pseudonymize import pseudonymize_result
+
+        scan_result = ScanResult(scan_id="test", config=ScanConfig(), findings=[finding])
+        pseudonymized = pseudonymize_result(scan_result).findings[0]
+        assert "keyRings/kr" not in pseudonymized.description
+        assert pseudonymized.current_state["kms_key_name"].startswith("pseu_")
+
 
 class TestCheckCmekEncryption:
     @pytest.fixture
@@ -329,3 +370,56 @@ class TestCheckCertificateManager:
 
         assert len(_maengel(result)) == 1
         assert not _compliant(result)
+
+    def _session_with_full_path_name(self, expire_time: datetime) -> FakeGcpSession:
+        # The real Certificate Manager API returns the FULL resource path as
+        # "name" — and may embed the numeric project NUMBER there, which
+        # account_id (the alphanumeric project ID) never covers (ADR-0011
+        # review 27.07.2026, Auflage A2).
+        svc = MagicMock()
+        chain = svc.projects.return_value.locations.return_value.certificates.return_value
+        chain.list.return_value.execute.return_value = {
+            "certificates": [
+                {
+                    "name": "projects/123456789012/locations/global/certificates/webshop-cert",
+                    "expireTime": expire_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                }
+            ]
+        }
+        return FakeGcpSession(services={"certificatemanager": svc})
+
+    def test_expired_certificate_full_path_is_pseudonymized_on_extern_export(self):
+        session = self._session_with_full_path_name(datetime.now(UTC) - timedelta(days=1))
+
+        result = asyncio.run(CheckCertificateManager().execute(session))
+        finding = _maengel(result)[0]
+
+        assert finding.current_state["certificate_name"].endswith("webshop-cert")
+        assert "123456789012" in finding.description
+
+        from nis2scan.engine.models.config import ScanConfig
+        from nis2scan.engine.models.result import ScanResult
+        from nis2scan.reporting.pseudonymize import pseudonymize_result
+
+        scan_result = ScanResult(scan_id="test", config=ScanConfig(), findings=[finding])
+        pseudonymized = pseudonymize_result(scan_result).findings[0]
+        assert "123456789012" not in pseudonymized.description
+        assert "webshop-cert" not in pseudonymized.description
+        assert pseudonymized.current_state["certificate_name"].startswith("pseu_")
+
+    def test_valid_certificate_full_path_is_pseudonymized_on_extern_export(self):
+        session = self._session_with_full_path_name(datetime.now(UTC) + timedelta(days=60))
+
+        result = asyncio.run(CheckCertificateManager().execute(session))
+        finding = _compliant(result)[0]
+
+        assert finding.current_state["certificate_name"].endswith("webshop-cert")
+
+        from nis2scan.engine.models.config import ScanConfig
+        from nis2scan.engine.models.result import ScanResult
+        from nis2scan.reporting.pseudonymize import pseudonymize_result
+
+        scan_result = ScanResult(scan_id="test", config=ScanConfig(), findings=[finding])
+        pseudonymized = pseudonymize_result(scan_result).findings[0]
+        assert "123456789012" not in pseudonymized.description
+        assert "webshop-cert" not in pseudonymized.description

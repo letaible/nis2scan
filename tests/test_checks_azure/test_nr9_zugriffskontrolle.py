@@ -175,6 +175,51 @@ class TestCheckNsgOpenAccess:
         assert len(_maengel(result)) == 1
         assert not _compliant(result)
 
+    def _client_with_rule_name(self, rule_name: str) -> MagicMock:
+        client = MagicMock()
+        client.network_security_groups.list_all.return_value = [
+            SimpleNamespace(
+                name="nsg1",
+                location="westeurope",
+                id=f"/subscriptions/{SUB_ID}/resourceGroups/rg/providers/Microsoft.Network/networkSecurityGroups/nsg1",
+                security_rules=[
+                    SimpleNamespace(
+                        name=rule_name,
+                        direction="Inbound",
+                        access="Allow",
+                        source_address_prefix="0.0.0.0/0",
+                        destination_port_range="3389",
+                        protocol="Tcp",
+                    ),
+                ],
+            ),
+        ]
+        return client
+
+    def test_open_inbound_rule_name_is_pseudonymized_on_extern_export(self):
+        # ADR-0011: rule_summary interpolates customer-chosen NSG rule names
+        # into the description; the "open_inbound_rules" list carries them
+        # nested in dicts ({"name": ..., "port": ..., "protocol": ...}) which
+        # _collect_identifiers never inspects.
+        session = FakeAzureSession({"NetworkManagementClient": self._client_with_rule_name("allow-rdp-internet")})
+
+        result = asyncio.run(CheckNsgOpenAccess().execute(session))
+        finding = _maengel(result)[0]
+
+        assert finding.current_state["open_inbound_rule_name"] == ["allow-rdp-internet"]
+
+        from nis2scan.engine.models.config import ScanConfig
+        from nis2scan.engine.models.result import ScanResult
+        from nis2scan.reporting.pseudonymize import pseudonymize_result
+
+        scan_result = ScanResult(scan_id="test", config=ScanConfig(), findings=[finding])
+        pseudonymized = pseudonymize_result(scan_result).findings[0]
+        assert "allow-rdp-internet" not in pseudonymized.description
+        assert pseudonymized.current_state["open_inbound_rule_name"][0].startswith("pseu_")
+        # The dict list is rewritten too — _replace_in_state traverses nested
+        # structures for replacement even though collection never does.
+        assert pseudonymized.current_state["open_inbound_rules"][0]["name"].startswith("pseu_")
+
 
 class TestCheckStoragePublicAccess:
     def _client(self, public: bool) -> MagicMock:
@@ -203,6 +248,34 @@ class TestCheckStoragePublicAccess:
 
         assert len(_maengel(result)) == 1
         assert not _compliant(result)
+
+    def test_public_account_name_is_pseudonymized_on_extern_export(self):
+        # ADR-0011: the description joins the first 5 public account names
+        # into a single string; resource_id/account_id here only cover the
+        # subscription.
+        client = MagicMock()
+        client.storage_accounts.list.return_value = [
+            SimpleNamespace(
+                name="pubfinance01",
+                public_network_access="Enabled",
+                network_rule_set=SimpleNamespace(default_action="Allow"),
+            ),
+        ]
+        session = FakeAzureSession({"StorageManagementClient": client})
+
+        result = asyncio.run(CheckStoragePublicAccess().execute(session))
+        finding = _maengel(result)[0]
+
+        assert finding.current_state["public_account_name"] == ["pubfinance01"]
+
+        from nis2scan.engine.models.config import ScanConfig
+        from nis2scan.engine.models.result import ScanResult
+        from nis2scan.reporting.pseudonymize import pseudonymize_result
+
+        scan_result = ScanResult(scan_id="test", config=ScanConfig(), findings=[finding])
+        pseudonymized = pseudonymize_result(scan_result).findings[0]
+        assert "pubfinance01" not in pseudonymized.description
+        assert pseudonymized.current_state["public_account_name"][0].startswith("pseu_")
 
 
 class TestCheckClassicAdmins:

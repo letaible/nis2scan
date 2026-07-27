@@ -184,6 +184,38 @@ class TestCheckDiagnosticSettings:
         assert len(_maengel(result)) == 1
         assert not _compliant(result)
 
+    def test_resource_without_diag_name_is_pseudonymized_on_extern_export(self):
+        # ADR-0011: resource_summary interpolates critical-resource names
+        # (Key Vaults, SQL servers, storage accounts, NSGs) into the
+        # description; resource_id/account_id here only cover the subscription.
+        resource_client = MagicMock()
+        resource_client.resources.list.return_value = [
+            SimpleNamespace(
+                name="kv-secrets-prod",
+                type="Microsoft.KeyVault/vaults",
+                id=f"/subscriptions/{SUB_ID}/resourceGroups/rg/providers/Microsoft.KeyVault/vaults/kv-secrets-prod",
+            ),
+        ]
+        monitor_client = MagicMock()
+        monitor_client.diagnostic_settings.list.return_value = []
+        session = FakeAzureSession(
+            {"ResourceManagementClient": resource_client, "MonitorManagementClient": monitor_client}
+        )
+
+        result = asyncio.run(CheckDiagnosticSettings().execute(session))
+        finding = _maengel(result)[0]
+
+        assert finding.current_state["resource_without_diag_name"] == ["kv-secrets-prod"]
+
+        from nis2scan.engine.models.config import ScanConfig
+        from nis2scan.engine.models.result import ScanResult
+        from nis2scan.reporting.pseudonymize import pseudonymize_result
+
+        scan_result = ScanResult(scan_id="test", config=ScanConfig(), findings=[finding])
+        pseudonymized = pseudonymize_result(scan_result).findings[0]
+        assert "kv-secrets-prod" not in pseudonymized.description
+        assert pseudonymized.current_state["resource_without_diag_name"][0].startswith("pseu_")
+
     def test_partial_query_failure_produces_check_error_no_positive_evidence(self):
         # B-Nr.6-10: a failed diagnostic_settings.list() call for one resource used
         # to be swallowed silently (`except Exception: pass`) while the other

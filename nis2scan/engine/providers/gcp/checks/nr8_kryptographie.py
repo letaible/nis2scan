@@ -89,6 +89,11 @@ class CheckKmsKeyRotation(BaseCheck):
                                     current_state={
                                         "rotation_period_days": rotation_days,
                                         "has_rotation": True,
+                                        # Full KMS path incl. key ring (ADR-0011): the
+                                        # key ring segment is a customer-chosen,
+                                        # identifying name not covered by resource_id's
+                                        # tail (which is only the key name).
+                                        "kms_key_name": key.name,
                                     },
                                     expected_state=f"Rotationsperiode von maximal {MAX_ROTATION_DAYS} Tagen",
                                     audit_evidence=(
@@ -121,6 +126,10 @@ class CheckKmsKeyRotation(BaseCheck):
                                     current_state={
                                         "rotation_period_days": rotation_days,
                                         "has_rotation": has_rotation,
+                                        # Same rationale as the compliant branch above:
+                                        # the key ring name in the path is not covered
+                                        # by any other collected identifier.
+                                        "kms_key_name": key_id,
                                     },
                                     expected_state=(f"Rotationsperiode von maximal {MAX_ROTATION_DAYS} Tagen"),
                                     remediation=(
@@ -659,7 +668,18 @@ class CheckCertificateManager(BaseCheck):
                                 resource_id=f"certificates/{cert_id}",
                                 resource_type="gcp.certificatemanager.Certificate",
                                 account_id=project_id,
-                                current_state={"expire_time": expire_time_str, "expired": False},
+                                current_state={
+                                    "expire_time": expire_time_str,
+                                    "expired": False,
+                                    # Full API resource path under a deny-list suffix
+                                    # (ADR-0011): the path is interpolated into the
+                                    # description above, and the Certificate Manager
+                                    # API may embed the numeric project NUMBER there,
+                                    # which account_id (the project ID) never covers.
+                                    # Singular _name — the deny-list regex requires
+                                    # the suffix at the very end of the key.
+                                    "certificate_name": cert_id,
+                                },
                                 expected_state="Zertifikat gültig und nicht abgelaufen",
                                 audit_evidence=(f"certificate.expireTime={expire_time_str}, now={now.isoformat()}"),
                                 iso27001_control="A.8.24 Verwendung von Kryptographie",
@@ -690,6 +710,9 @@ class CheckCertificateManager(BaseCheck):
                                 current_state={
                                     "expire_time": expire_time_str,
                                     "expired": True,
+                                    # Same rationale as the compliant branch: full
+                                    # path under a deny-list suffix (ADR-0011).
+                                    "certificate_name": cert_id,
                                 },
                                 expected_state="Zertifikat gültig und nicht abgelaufen",
                                 remediation=(

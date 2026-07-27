@@ -94,6 +94,34 @@ class TestCheckSecurityHealthAnalytics:
         assert not _compliant(result)
         assert not result.errors
 
+    def test_disabled_scc_finding_does_not_leak_raw_exception_text(self, scc_client: MagicMock):
+        # ADR-0011: Google API error messages regularly embed the caller's
+        # project NUMBER or principal e-mail — text account_id (which only
+        # covers the configured, alphanumeric project ID) does not cover, and
+        # pseudonymize.py drops CheckError.message for exactly this reason.
+        # current_state must therefore carry only the exception type, never
+        # the raw message (audit_evidence already exposes only the type).
+        raw_error = (
+            "PERMISSION_DENIED: Security Center API has not been used in project 123456789012 before or it is disabled."
+        )
+        scc_client.list_findings.side_effect = RuntimeError(raw_error)
+
+        result = asyncio.run(CheckSecurityHealthAnalytics().execute(FakeGcpSession()))
+
+        maengel = _maengel(result)
+        assert len(maengel) == 1
+        assert maengel[0].current_state == {"scc_accessible": False, "error_type": "RuntimeError"}
+        assert "123456789012" not in str(maengel[0].current_state)
+
+        from nis2scan.engine.models.config import ScanConfig
+        from nis2scan.engine.models.result import ScanResult
+        from nis2scan.reporting.pseudonymize import pseudonymize_result
+
+        scan_result = ScanResult(scan_id="test", config=ScanConfig(), findings=[maengel[0]])
+        pseudonymized = pseudonymize_result(scan_result).findings[0]
+        assert "123456789012" not in pseudonymized.description
+        assert "123456789012" not in str(pseudonymized.current_state)
+
 
 class TestCheckPolicyIntelligence:
     def _session(self, error_message: str | None) -> FakeGcpSession:

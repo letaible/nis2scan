@@ -226,7 +226,13 @@ class CheckSecurityHealthAnalytics(BaseCheck):
                             resource_id=f"projects/{project_id}/securitycenter",
                             resource_type="gcp.securitycenter.Findings",
                             account_id=project_id,
-                            current_state={"scc_accessible": False, "error": str(exc)[:200]},
+                            # No raw exception text here (ADR-0011): Google API error
+                            # messages regularly embed the caller's project number or
+                            # principal e-mail, and account_id here only covers the
+                            # (alphanumeric) project ID, not a numeric project number
+                            # the API might echo back. error_type is fully sufficient
+                            # for triage (audit_evidence below already uses only that).
+                            current_state={"scc_accessible": False, "error_type": type(exc).__name__},
                             expected_state="Security Command Center API aktiviert und zugänglich",
                             remediation=(
                                 "Aktivieren Sie das Security Command Center:\n"
