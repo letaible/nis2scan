@@ -9,6 +9,14 @@ on:
   # `secrets: inherit` im Caller — deshalb kein eigener `secrets:`-Block hier
   # nötig (GitHub Actions gibt sie trotzdem an diesen Workflow durch).
   workflow_call:
+  schedule:
+    # Wöchentlicher Regressionslauf (Gründer-Vorgabe 27.07.2026: Härtetest-Journeys
+    # regelmäßig). Ein schedule-Event ist kein PR-/Push-Kontext — dieser Workflow
+    # verwendet ohnehin nirgends github.event.pull_request/push, nur github.ref
+    # (Concurrency-Gruppe, fällt für schedule auf den Default-Branch-Ref zurück)
+    # und github.run_id — beide sind bei schedule-Events unverändert vorhanden.
+    # Secrets/OIDC-Permissions bleiben identisch (workflow-weiter permissions-Block).
+    - cron: "0 5 * * 1" # Montags 05:00 UTC
 
 permissions:
   id-token: write
@@ -25,7 +33,9 @@ env:
 jobs:
   integration:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Raised from 30 (audit 27.07.2026): the new CLI-E2E step below runs 2
+    # additional real scans (intern, extern) on top of the existing pytest run.
+    timeout-minutes: 40
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -67,6 +77,24 @@ jobs:
         env:
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
         run: pytest tests/integration/test_integration_gcp_*.py -v --tb=short -m integration -n auto
+
+      # === CLI-E2E (Wheel) — Testpyramide Stufe "CLI-E2E gegen echte Infra" ===
+      # (Gründer-Go 27.07.2026). Runs BEFORE destroy so it hits the same live
+      # test infrastructure as the step above. Reuses the OIDC auth already
+      # done for this job — no separate auth step needed since this stays in
+      # the same job. Same env var as "Run GCP Integration Tests" above.
+
+      - name: Build Wheel
+        run: pip wheel . --no-deps --wheel-dir dist/
+
+      - name: CLI-E2E (Wheel)
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+        run: |
+          python -m venv .venv-e2e
+          .venv-e2e/bin/pip install --quiet dist/*.whl
+          export NIS2SCAN_E2E_BIN="$(pwd)/.venv-e2e/bin/nis2scan"
+          pytest tests/integration/test_integration_gcp_nr0_cli_e2e.py -v --tb=short -m integration
 
       # === Cleanup Phase (always runs) ===
 
