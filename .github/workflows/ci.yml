@@ -111,5 +111,9 @@ jobs:
         # JSON contract for both report profiles), and the CLI misuse matrix
         # (exit 64 / EX_USAGE). See tests/test_cli_package/ for the full
         # journey-by-journey breakdown.
-        run: "$BIN_DIR/python$EXT" -m pytest tests/test_cli_package/ -v -m package_smoke
+        # Block scalar on purpose: an inline scalar STARTING with a double
+        # quote but continuing after it is invalid YAML and broke the whole
+        # workflow at startup (run 30261915378).
+        run: |
+          "$BIN_DIR/python$EXT" -m pytest tests/test_cli_package/ -v -m package_smoke
         timeout-minutes: 30

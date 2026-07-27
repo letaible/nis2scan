@@ -90,6 +90,14 @@ module "nr8_kryptographie" {
   vpc_id     = aws_vpc.test.id
   subnet_ids = [aws_subnet.az1.id, aws_subnet.az2.id]
   region     = var.region
+
+  # The module creates the deliberately UNENCRYPTED EBS volume. Without this
+  # ordering it races the account-wide default-encryption disable above —
+  # if the volume wins the race while the default is still enabled, AWS
+  # force-encrypts it and every NR8-002/exceptions integration test fails
+  # (flaky since 13.07., first lost race 27.07.2026; nr3_bcm already had
+  # this dependency, nr8 was missed).
+  depends_on = [aws_ebs_encryption_by_default.disable]
 }
 
 # --- Module: Nr. 9 Zugriffskontrolle ---
