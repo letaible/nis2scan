@@ -336,10 +336,15 @@ class CheckAssetInventory(BaseCheck):
                 client = asset_v1.AssetServiceClient(
                     credentials=session.credentials,
                 )
+                # Unlike most List* RPCs in this SDK, ListFeeds is not paginated —
+                # it returns a single ListFeedsResponse with a `feeds` field, not an
+                # iterable page iterator (real-API-verified 27.07.2026: iterating the
+                # response object directly raises "'ListFeedsResponse' object is not
+                # iterable").
                 feeds = list(
                     client.list_feeds(
                         request={"parent": f"projects/{project_id}"},
-                    )
+                    ).feeds
                 )
 
                 if feeds:

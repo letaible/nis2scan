@@ -185,9 +185,13 @@ class CheckIapAdminAccess(BaseCheck):
         for project_id in session.project_ids:
             try:
                 service = session.service("iap", "v1")
+                # getIamPolicy/setIamPolicy/testIamPermissions are top-level RPCs in
+                # the IAP API (id "iap.getIamPolicy", no resource segment) — the
+                # discovery client exposes them on the synthetic `v1()` resource, NOT
+                # under projects().iap_tunnel() (real-API-verified 27.07.2026:
+                # projects().iap_tunnel() has no getIamPolicy attribute at all).
                 result = (
-                    service.projects()
-                    .iap_tunnel()
+                    service.v1()
                     .getIamPolicy(
                         resource=f"projects/{project_id}/iap_tunnel",
                         body={},
@@ -365,9 +369,12 @@ class CheckVpnGateways(BaseCheck):
                     iap_status_unknown = False
                     try:
                         iap_service = session.service("iap", "v1")
+                        # Same fix as CheckIapAdminAccess/CheckIdentityAwareProxy:
+                        # getIamPolicy is a top-level IAP RPC exposed on the
+                        # synthetic v1() resource, not projects().iap_tunnel()
+                        # (real-API-verified 27.07.2026).
                         iap_result = (
-                            iap_service.projects()
-                            .iap_tunnel()
+                            iap_service.v1()
                             .getIamPolicy(
                                 resource=f"projects/{project_id}/iap_tunnel",
                                 body={},
@@ -522,10 +529,13 @@ class CheckOsLoginWith2fa(BaseCheck):
                 client = ProjectsClient(credentials=session.credentials)
                 project = client.get(request={"project": project_id})
 
-                # Check common instance metadata
+                # Check common instance metadata. Note: the proto field is `items`
+                # (real-API-verified 27.07.2026: `items_` raises "Unknown field for
+                # Metadata: items_" — proto-plus does not trailing-underscore this
+                # field, unlike Python-reserved-word fields).
                 metadata_items = {}
-                if project.common_instance_metadata and project.common_instance_metadata.items_:
-                    for item in project.common_instance_metadata.items_:
+                if project.common_instance_metadata and project.common_instance_metadata.items:
+                    for item in project.common_instance_metadata.items:
                         metadata_items[item.key] = item.value
 
                 os_login = metadata_items.get("enable-oslogin", "").upper()
@@ -708,11 +718,34 @@ class CheckSecureLdap(BaseCheck):
                     or "403" in error_msg
                     or "permission" in error_msg
                     or "not found" in error_msg
+                    # Real-API-verified 27.07.2026: a GCP-only project/organization
+                    # with no associated Cloud Identity or Workspace customer makes
+                    # "customers/my_customer" unresolvable, and the API answers with
+                    # a bare "400 Request contains an invalid argument." — not a
+                    # code defect (that parent literal is the documented value for
+                    # "the caller's own Cloud Identity customer"), but an
+                    # environment precondition this check cannot satisfy itself.
+                    # Deliberately narrow (legal review 27.07.2026, Auflage 2):
+                    # "invalid argument" alone would also swallow FUTURE real
+                    # request-building defects as "nicht anwendbar" — require the
+                    # cloudidentity endpoint in the error text (HttpError embeds
+                    # the request URL) so only THIS documented situation matches.
+                    or ("invalid argument" in error_msg and "cloudidentity.googleapis.com" in error_msg)
                 ):
                     # Cloud Identity not accessible — not applicable for this setup, not a defect
                     errors.append(
                         CheckError(
-                            message=(f"Projekt {project_id}: Cloud Identity nicht zugänglich — Nicht anwendbar: {exc}"),
+                            message=(
+                                # No edition/tier claim (legal review 27.07.2026,
+                                # Auflage 1): the groups API works with Cloud
+                                # Identity FREE as well — the precondition is a
+                                # Cloud-Identity-/Workspace-Kunde existing at all,
+                                # not a paid edition (the earlier "Premium" wording
+                                # was already retired once in W4 batch 10).
+                                f"Projekt {project_id}: Cloud Identity nicht zugänglich — für dieses Projekt/"
+                                f"diese Organisation ist kein Cloud-Identity- oder Google-Workspace-Kunde "
+                                f"auflösbar. Nicht anwendbar: {exc}"
+                            ),
                             error_type=type(exc).__name__,
                         )
                     )

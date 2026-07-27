@@ -275,13 +275,19 @@ class CheckPolicyIntelligence(BaseCheck):
         for project_id in session.project_ids:
             try:
                 service = session.service("recommender", "v1")
+                # google.iam.policy.Recommender is a global-scoped recommender (IAM
+                # policy recommendations are project-wide, not per-region) — the
+                # Recommender API rejects the "-" aggregation wildcard used by
+                # Compute Engine's aggregated_list with "Invalid location: -."
+                # (real-API-verified 27.07.2026). "global" is the correct, single
+                # location for this recommender.
                 result = (
                     service.projects()
                     .locations()
                     .recommenders()
                     .recommendations()
                     .list(
-                        parent=(f"projects/{project_id}/locations/-/recommenders/google.iam.policy.Recommender"),
+                        parent=(f"projects/{project_id}/locations/global/recommenders/google.iam.policy.Recommender"),
                     )
                     .execute()
                 )

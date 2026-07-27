@@ -409,7 +409,11 @@ class CheckBinaryAuthorization(BaseCheck):
         for project_id in session.project_ids:
             try:
                 service = session.service("binaryauthorization", "v1")
-                policy = service.projects().getPolicy(name=f"projects/{project_id}").execute()
+                # The API requires the "/policy" suffix on the resource name
+                # (pattern "^projects/[^/]+/policy$") — real-API-verified 27.07.2026:
+                # a bare "projects/<id>" raises a client-side TypeError for not
+                # matching that pattern before the request is ever sent.
+                policy = service.projects().getPolicy(name=f"projects/{project_id}/policy").execute()
 
                 default_rule = policy.get("defaultAdmissionRule", {})
                 evaluation_mode = default_rule.get("evaluationMode", "ALWAYS_ALLOW")

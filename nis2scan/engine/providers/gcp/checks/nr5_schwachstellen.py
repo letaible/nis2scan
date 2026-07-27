@@ -332,14 +332,54 @@ class CheckArtifactRegistryScanning(BaseCheck):
         for project_id in session.project_ids:
             try:
                 service = session.service("artifactregistry", "v1")
-                result = (
-                    service.projects()
-                    .locations()
-                    .repositories()
-                    .list(parent=f"projects/{project_id}/locations/-")
-                    .execute()
-                )
-                repositories = result.get("repositories", [])
+                # Unlike Compute Engine, Artifact Registry does not support the "-"
+                # aggregation wildcard for locations (real-API-verified 27.07.2026:
+                # the server rejects it with 400 "Invalid project name"). Locations
+                # must be enumerated explicitly and queried one at a time.
+                location_ids: list[str] = []
+                page_token = ""
+                while True:
+                    loc_request: dict[str, Any] = {"name": f"projects/{project_id}"}
+                    if page_token:
+                        loc_request["pageToken"] = page_token
+                    loc_response = service.projects().locations().list(**loc_request).execute()
+                    location_ids.extend(loc.get("locationId", "") for loc in loc_response.get("locations", []))
+                    page_token = loc_response.get("nextPageToken", "")
+                    if not page_token:
+                        break
+
+                # One location's failure must not discard evidence already
+                # gathered from the other ~45 locations (ADR-0016 fail-safe) —
+                # each location gets its own CheckError instead of aborting the
+                # whole per-project iteration.
+                repositories: list[dict[str, Any]] = []
+                for location_id in location_ids:
+                    if not location_id:
+                        continue
+                    try:
+                        repo_page_token = ""
+                        while True:
+                            repo_request: dict[str, Any] = {
+                                "parent": f"projects/{project_id}/locations/{location_id}",
+                            }
+                            if repo_page_token:
+                                repo_request["pageToken"] = repo_page_token
+                            repo_response = service.projects().locations().repositories().list(**repo_request).execute()
+                            repositories.extend(repo_response.get("repositories", []))
+                            repo_page_token = repo_response.get("nextPageToken", "")
+                            if not repo_page_token:
+                                break
+                    except Exception as loc_exc:
+                        errors.append(
+                            CheckError(
+                                message=(
+                                    f"Projekt {project_id}, Location {location_id}: "
+                                    f"Artifact-Registry-Repositories nicht abrufbar: {loc_exc}"
+                                ),
+                                error_type=type(loc_exc).__name__,
+                                region=location_id,
+                            )
+                        )
 
                 if repositories:
                     findings.append(

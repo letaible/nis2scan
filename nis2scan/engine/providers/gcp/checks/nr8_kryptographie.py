@@ -48,12 +48,47 @@ class CheckKmsKeyRotation(BaseCheck):
                 client = kms_v1.KeyManagementServiceClient(
                     credentials=session.credentials,
                 )
-                # List all key rings across all locations
-                key_rings = list(
-                    client.list_key_rings(
-                        request={"parent": f"projects/{project_id}/locations/-"},
-                    )
-                )
+                # Cloud KMS does not support the "-" aggregation wildcard for
+                # locations (real-API-verified 27.07.2026: the server rejects it
+                # with NotFound "The request concerns location '-' but was sent to
+                # location 'global'"). Locations must be enumerated explicitly via
+                # the Locations mixin (list_locations does not auto-paginate — it
+                # returns a raw ListLocationsResponse, unlike list_key_rings below).
+                location_ids: list[str] = []
+                page_token = ""
+                while True:
+                    loc_request: dict[str, Any] = {"name": f"projects/{project_id}"}
+                    if page_token:
+                        loc_request["page_token"] = page_token
+                    loc_response = client.list_locations(request=loc_request)
+                    location_ids.extend(location.location_id for location in loc_response.locations)
+                    page_token = loc_response.next_page_token
+                    if not page_token:
+                        break
+
+                # List all key rings across all locations. One location's failure
+                # must not discard evidence already gathered from the other ~70
+                # locations (ADR-0016 fail-safe) — each location gets its own
+                # CheckError instead of aborting the whole per-project iteration.
+                key_rings: list[Any] = []
+                for location_id in location_ids:
+                    try:
+                        key_rings.extend(
+                            client.list_key_rings(
+                                request={"parent": f"projects/{project_id}/locations/{location_id}"},
+                            )
+                        )
+                    except Exception as loc_exc:
+                        errors.append(
+                            CheckError(
+                                message=(
+                                    f"Projekt {project_id}, Location {location_id}: "
+                                    f"KMS-Key-Rings nicht abrufbar: {loc_exc}"
+                                ),
+                                error_type=type(loc_exc).__name__,
+                                region=location_id,
+                            )
+                        )
 
                 for key_ring in key_rings:
                     crypto_keys = list(

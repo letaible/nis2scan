@@ -238,6 +238,35 @@ class TestCheckBinaryAuthorization:
         assert len(result.errors) == 1
         assert result.errors[0].error_type == "RuntimeError"
 
+    def test_get_policy_name_has_policy_suffix(self):
+        # Real-API-verified 27.07.2026 (SDK-Fix-Paket, GCP-NR4-004): the API
+        # requires the resource name to match "^projects/[^/]+/policy$" — a bare
+        # "projects/<id>" raises a client-side TypeError before any request is
+        # sent. See the real-shape guard test below for the pattern itself.
+        session = self._session("ALWAYS_ALLOW")
+        service = session.service("binaryauthorization", "v1")
+
+        asyncio.run(CheckBinaryAuthorization().execute(session))
+
+        _, kwargs = service.projects.return_value.getPolicy.call_args
+        assert kwargs["name"] == f"projects/{PROJECT_ID}/policy"
+
+    def test_real_discovery_doc_requires_policy_suffix_on_name(self):
+        # Real-shape guard: builds from the googleapiclient-bundled static
+        # discovery document (no network call) and asserts on the actual
+        # binaryauthorization v1 parameter pattern for getPolicy.
+        import re
+
+        from googleapiclient.discovery import build
+
+        service = build(
+            "binaryauthorization", "v1", credentials=MagicMock(), cache_discovery=False, static_discovery=True
+        )
+        method_doc = service._rootDesc["resources"]["projects"]["methods"]["getPolicy"]
+        pattern = method_doc["parameters"]["name"]["pattern"]
+        assert re.fullmatch(pattern, f"projects/{PROJECT_ID}/policy")
+        assert not re.fullmatch(pattern, f"projects/{PROJECT_ID}")
+
 
 class TestCheckVpcServiceControlsSupplyChain:
     def _session(self, perimeters: int) -> FakeGcpSession:

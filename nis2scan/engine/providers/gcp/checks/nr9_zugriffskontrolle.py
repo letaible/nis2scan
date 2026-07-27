@@ -334,9 +334,13 @@ class CheckIdentityAwareProxy(BaseCheck):
         for project_id in session.project_ids:
             try:
                 service = session.service("iap", "v1")
+                # getIamPolicy/setIamPolicy/testIamPermissions are top-level RPCs in
+                # the IAP API (id "iap.getIamPolicy", no resource segment) — the
+                # discovery client exposes them on the synthetic `v1()` resource, NOT
+                # under projects().iap_tunnel() (real-API-verified 27.07.2026:
+                # projects().iap_tunnel() has no getIamPolicy attribute at all).
                 result = (
-                    service.projects()
-                    .iap_tunnel()
+                    service.v1()
                     .getIamPolicy(
                         resource=f"projects/{project_id}/iap_tunnel",
                         body={},
@@ -449,7 +453,12 @@ class CheckIdentityAwareProxy(BaseCheck):
                 # Only explicit deactivation signals count as "not enabled";
                 # a bare 403/permission error is an unknown state -> CheckError
                 # (same classification as GCP-NR6-002/-003 and GCP-NR9-007).
-                if "not enabled" in error_msg or "accessnotconfigured" in error_msg:
+                # "has not been used" is included because the real IAP API's
+                # SERVICE_DISABLED error reads "... has not been used in project
+                # ... before or it is disabled." (real-API-verified 27.07.2026) —
+                # without this signal a disabled-API project incorrectly fell
+                # through to an opaque CheckError instead of this Finding.
+                if "not enabled" in error_msg or "accessnotconfigured" in error_msg or "has not been used" in error_msg:
                     findings.append(
                         Finding(
                             check_id=self.check_id,
@@ -905,13 +914,19 @@ class CheckInactivePrincipals(BaseCheck):
         for project_id in session.project_ids:
             try:
                 service = session.service("recommender", "v1")
+                # google.iam.policy.Recommender is a global-scoped recommender (IAM
+                # policy recommendations are project-wide, not per-region) — the
+                # Recommender API rejects the "-" aggregation wildcard used by
+                # Compute Engine's aggregated_list with "Invalid location: -."
+                # (real-API-verified 27.07.2026). "global" is the correct, single
+                # location for this recommender.
                 result = (
                     service.projects()
                     .locations()
                     .recommenders()
                     .recommendations()
                     .list(
-                        parent=(f"projects/{project_id}/locations/-/recommenders/google.iam.policy.Recommender"),
+                        parent=(f"projects/{project_id}/locations/global/recommenders/google.iam.policy.Recommender"),
                     )
                     .execute()
                 )

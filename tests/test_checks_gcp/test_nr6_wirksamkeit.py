@@ -14,7 +14,7 @@ from nis2scan.engine.providers.gcp.checks.nr6_wirksamkeit import (
     CheckSecurityHealthAnalytics,
 )
 
-from .conftest import FakeGcpSession
+from .conftest import PROJECT_ID, FakeGcpSession
 
 
 def _compliant(result):
@@ -169,6 +169,22 @@ class TestCheckPolicyIntelligence:
         assert len(_maengel(result)) == 1
         assert not _compliant(result)
         assert not result.errors
+
+    def test_recommender_parent_uses_global_location_not_wildcard(self):
+        # Real-API-verified 27.07.2026 (SDK-Fix-Paket): the Recommender API
+        # rejects the "-" location wildcard with 400 "Invalid location: -."
+        # (unlike Compute Engine's aggregated_list). google.iam.policy.Recommender
+        # is a global-scoped recommender, so "global" is the only correct value.
+        session = self._session(error_message=None)
+        service = session.service("recommender")
+        chain = service.projects.return_value.locations.return_value.recommenders.return_value
+
+        asyncio.run(CheckPolicyIntelligence().execute(session))
+
+        _, kwargs = chain.recommendations.return_value.list.call_args
+        assert kwargs["parent"] == (
+            f"projects/{PROJECT_ID}/locations/global/recommenders/google.iam.policy.Recommender"
+        )
 
 
 class TestCheckMonitoringDashboards:
