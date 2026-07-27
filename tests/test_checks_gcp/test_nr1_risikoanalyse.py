@@ -153,7 +153,11 @@ class TestCheckAssetInventory:
         return client
 
     def test_feeds_produce_positive_evidence(self, asset_client: MagicMock):
-        asset_client.list_feeds.return_value = [SimpleNamespace(name="feed-1")]
+        # Real-shape mock (SDK-Fix-Paket 27.07.2026, GCP-NR1-004): list_feeds()
+        # returns a ListFeedsResponse with a `feeds` attribute — it is NOT itself
+        # iterable, unlike most other List* RPCs in this SDK (see the real-shape
+        # guard test below).
+        asset_client.list_feeds.return_value = SimpleNamespace(feeds=[SimpleNamespace(name="feed-1")])
 
         result = asyncio.run(CheckAssetInventory().execute(FakeGcpSession()))
 
@@ -161,7 +165,7 @@ class TestCheckAssetInventory:
         assert not _maengel(result)
 
     def test_no_feeds_produces_finding(self, asset_client: MagicMock):
-        asset_client.list_feeds.return_value = []
+        asset_client.list_feeds.return_value = SimpleNamespace(feeds=[])
 
         result = asyncio.run(CheckAssetInventory().execute(FakeGcpSession()))
 
@@ -176,3 +180,15 @@ class TestCheckAssetInventory:
         assert not result.findings
         assert len(result.errors) == 1
         assert result.errors[0].error_type == "RuntimeError"
+
+    def test_real_sdk_list_feeds_response_is_not_iterable(self):
+        # Real-shape guard (SDK-Fix-Paket 27.07.2026, GCP-NR1-004): the real
+        # ListFeedsResponse type must NOT be directly iterable — asserting on the
+        # actual generated proto-plus type (no network call) catches drift back
+        # to the pre-fix "list(client.list_feeds(...))" pattern.
+        from google.cloud.asset_v1.types import asset_service
+
+        response = asset_service.ListFeedsResponse()
+        with pytest.raises(TypeError):
+            iter(response)
+        assert list(response.feeds) == []

@@ -47,6 +47,18 @@ class TestCheckKmsKeyRotation:
         )
 
     def _wire(self, kms_client: MagicMock, key) -> None:
+        # Real-shape mock (SDK-Fix-Paket 27.07.2026, GCP-NR8-001): Cloud KMS
+        # rejects the "-" location wildcard (real-API-verified: NotFound "The
+        # request concerns location '-' but was sent to location 'global'") —
+        # locations must be enumerated via list_locations() first. Unlike
+        # list_key_rings/list_crypto_keys (real paginated Pagers, directly
+        # iterable), list_locations returns a raw ListLocationsResponse with a
+        # `locations` field and is NOT itself iterable (same shape as
+        # ListFeedsResponse in GCP-NR1-004).
+        kms_client.list_locations.return_value = SimpleNamespace(
+            locations=[SimpleNamespace(location_id="global")],
+            next_page_token="",
+        )
         kms_client.list_key_rings.return_value = [SimpleNamespace(name="projects/p/locations/global/keyRings/kr")]
         kms_client.list_crypto_keys.return_value = [key]
 
@@ -116,6 +128,56 @@ class TestCheckKmsKeyRotation:
         pseudonymized = pseudonymize_result(scan_result).findings[0]
         assert "keyRings/kr" not in pseudonymized.description
         assert pseudonymized.current_state["kms_key_name"].startswith("pseu_")
+
+    def test_key_rings_are_queried_per_enumerated_location_not_wildcard(self, kms_client: MagicMock):
+        kms_client.list_locations.return_value = SimpleNamespace(
+            locations=[SimpleNamespace(location_id="europe-west1"), SimpleNamespace(location_id="us-central1")],
+            next_page_token="",
+        )
+        kms_client.list_key_rings.return_value = []
+
+        asyncio.run(CheckKmsKeyRotation().execute(FakeGcpSession()))
+
+        parents = [call.kwargs["request"]["parent"] for call in kms_client.list_key_rings.call_args_list]
+        assert any(p.endswith("/locations/europe-west1") for p in parents)
+        assert any(p.endswith("/locations/us-central1") for p in parents)
+        assert not any(p.endswith("/locations/-") for p in parents)
+
+    def test_one_failing_location_does_not_discard_other_locations_evidence(self, kms_client: MagicMock):
+        # ADR-0016 fail-safe: a failure enumerating key rings in one of the ~70
+        # KMS locations must become its own CheckError (with region context) and
+        # must not wipe out findings already gathered from the other locations.
+        kms_client.list_locations.return_value = SimpleNamespace(
+            locations=[SimpleNamespace(location_id="broken-region"), SimpleNamespace(location_id="europe-west1")],
+            next_page_token="",
+        )
+
+        def list_key_rings(request):
+            if request["parent"].endswith("broken-region"):
+                raise RuntimeError("boom")
+            return [SimpleNamespace(name="projects/p/locations/europe-west1/keyRings/kr")]
+
+        kms_client.list_key_rings.side_effect = list_key_rings
+        kms_client.list_crypto_keys.return_value = [self._key(rotation_days=90)]
+
+        result = asyncio.run(CheckKmsKeyRotation().execute(FakeGcpSession()))
+
+        assert len(_compliant(result)) == 1
+        region_errors = [e for e in result.errors if e.region == "broken-region"]
+        assert len(region_errors) == 1
+        assert region_errors[0].error_type == "RuntimeError"
+
+    def test_real_sdk_list_locations_response_is_not_iterable(self):
+        # Real-shape guard (SDK-Fix-Paket 27.07.2026, GCP-NR8-001): the real
+        # ListLocationsResponse type must NOT be directly iterable — asserting on
+        # the actual generated type (no network call) catches drift back to
+        # treating list_locations() like the auto-paginated list_key_rings().
+        from google.cloud.location import locations_pb2
+
+        response = locations_pb2.ListLocationsResponse()
+        with pytest.raises(TypeError):
+            iter(response)
+        assert list(response.locations) == []
 
 
 class TestCheckCmekEncryption:

@@ -167,8 +167,11 @@ class TestCheckServiceAccountHygiene:
 
 class TestCheckIdentityAwareProxy:
     def _session(self, bindings: list[dict]) -> FakeGcpSession:
+        # Real-shape mock (SDK-Fix-Paket 27.07.2026, GCP-NR9-003): getIamPolicy is
+        # a top-level IAP RPC exposed on the synthetic v1() resource, NOT under
+        # projects().iap_tunnel() (see the real-shape guard test below).
         svc = MagicMock()
-        chain = svc.projects.return_value.iap_tunnel.return_value
+        chain = svc.v1.return_value
         chain.getIamPolicy.return_value.execute.return_value = {"bindings": bindings}
         return FakeGcpSession(services={"iap": svc})
 
@@ -202,7 +205,7 @@ class TestCheckIdentityAwareProxy:
     def test_api_error_produces_check_error_no_finding(self):
         session = self._session([])
         service = session.service("iap")
-        chain = service.projects.return_value.iap_tunnel.return_value
+        chain = service.v1.return_value
         chain.getIamPolicy.return_value.execute.side_effect = RuntimeError("boom")
 
         result = asyncio.run(CheckIdentityAwareProxy().execute(session))
@@ -210,6 +213,38 @@ class TestCheckIdentityAwareProxy:
         assert not result.findings
         assert len(result.errors) == 1
         assert result.errors[0].error_type == "RuntimeError"
+
+    def test_service_disabled_message_produces_finding_not_check_error(self):
+        # Real-API-verified 27.07.2026: the real IAP SERVICE_DISABLED error reads
+        # "... has not been used in project ... before or it is disabled.", which
+        # contains neither "not enabled" nor "accessnotconfigured" verbatim — the
+        # classification must also match on "has not been used".
+        session = self._session([])
+        service = session.service("iap")
+        chain = service.v1.return_value
+        chain.getIamPolicy.return_value.execute.side_effect = RuntimeError(
+            "Cloud Identity-Aware Proxy API has not been used in project p before or it is disabled."
+        )
+
+        result = asyncio.run(CheckIdentityAwareProxy().execute(session))
+
+        maengel = _maengel(result)
+        assert len(maengel) == 1
+        assert maengel[0].title == "Identity-Aware Proxy nicht aktiviert"
+        assert not result.errors
+
+    def test_real_discovery_doc_exposes_getiampolicy_on_v1_not_iap_tunnel(self):
+        # Real-shape guard (SDK-Fix-Paket 27.07.2026, GCP-NR9-003/GCP-NR10-002):
+        # builds the discovery client from the googleapiclient-bundled static
+        # discovery document (no network call, static_discovery=True) and
+        # asserts on the actual IAP v1 resource tree — catches drift back to the
+        # pre-fix projects().iap_tunnel().getIamPolicy() call shape, which does
+        # not exist on the real API.
+        from googleapiclient.discovery import build
+
+        service = build("iap", "v1", credentials=MagicMock(), cache_discovery=False, static_discovery=True)
+        assert hasattr(service.v1(), "getIamPolicy")
+        assert not hasattr(service.projects().iap_tunnel(), "getIamPolicy")
 
 
 class TestCheckVpcFirewallRules:
@@ -468,10 +503,28 @@ class TestCheckInactivePrincipals:
         return FakeGcpSession(services={"recommender": svc})
 
     def test_no_unused_access_produces_positive_evidence(self):
-        result = asyncio.run(CheckInactivePrincipals().execute(self._session([])))
+        session = self._session([])
+
+        result = asyncio.run(CheckInactivePrincipals().execute(session))
 
         assert len(_compliant(result)) == 1
         assert not _maengel(result)
+
+    def test_recommender_parent_uses_global_location_not_wildcard(self):
+        # Real-API-verified 27.07.2026 (SDK-Fix-Paket): the Recommender API
+        # rejects the "-" location wildcard with 400 "Invalid location: -."
+        # (unlike Compute Engine's aggregated_list). google.iam.policy.Recommender
+        # is a global-scoped recommender, so "global" is the only correct value.
+        session = self._session([])
+        service = session.service("recommender")
+        chain = service.projects.return_value.locations.return_value.recommenders.return_value
+
+        asyncio.run(CheckInactivePrincipals().execute(session))
+
+        _, kwargs = chain.recommendations.return_value.list.call_args
+        assert kwargs["parent"] == (
+            f"projects/{PROJECT_ID}/locations/global/recommenders/google.iam.policy.Recommender"
+        )
 
     def test_remove_recommendation_produces_finding(self):
         recs = [{"name": "rec-1", "recommenderSubtype": "REMOVE_ROLE", "description": "unused access"}]

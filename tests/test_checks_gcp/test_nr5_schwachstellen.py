@@ -15,7 +15,7 @@ from nis2scan.engine.providers.gcp.checks.nr5_schwachstellen import (
     CheckWebSecurityScanner,
 )
 
-from .conftest import FakeGcpSession
+from .conftest import PROJECT_ID, FakeGcpSession
 
 
 def _compliant(result):
@@ -99,8 +99,17 @@ class TestCheckWebSecurityScanner:
 
 
 class TestCheckArtifactRegistryScanning:
-    def _session(self, repos: int) -> FakeGcpSession:
+    def _session(self, repos: int, locations: list[str] | None = None) -> FakeGcpSession:
+        # Real-shape mock (SDK-Fix-Paket 27.07.2026, GCP-NR5-004): Artifact
+        # Registry does not support the "-" location wildcard (real-API-verified:
+        # the server rejects it with 400 "Invalid project name") — locations must
+        # be enumerated via projects().locations().list() first, then queried
+        # one at a time via projects().locations().repositories().list().
+        locations = locations or ["europe-west3"]
         svc = MagicMock()
+        svc.projects.return_value.locations.return_value.list.return_value.execute.return_value = {
+            "locations": [{"locationId": loc} for loc in locations]
+        }
         chain = svc.projects.return_value.locations.return_value.repositories.return_value
         chain.list.return_value.execute.return_value = {"repositories": [{"name": f"repo-{i}"} for i in range(repos)]}
         return FakeGcpSession(services={"artifactregistry": svc})
@@ -116,6 +125,44 @@ class TestCheckArtifactRegistryScanning:
 
         assert len(_maengel(result)) == 1
         assert not _compliant(result)
+
+    def test_repositories_are_queried_per_enumerated_location_not_wildcard(self):
+        session = self._session(repos=0, locations=["europe-west3", "us-central1"])
+        service = session.service("artifactregistry")
+        chain = service.projects.return_value.locations.return_value.repositories.return_value
+
+        asyncio.run(CheckArtifactRegistryScanning().execute(session))
+
+        parents = [call.kwargs["parent"] for call in chain.list.call_args_list]
+        assert f"projects/{PROJECT_ID}/locations/europe-west3" in parents
+        assert f"projects/{PROJECT_ID}/locations/us-central1" in parents
+        assert not any(p.endswith("/locations/-") for p in parents)
+
+    def test_one_failing_location_does_not_discard_other_locations_evidence(self):
+        # ADR-0016 fail-safe: a failure listing repositories in one of the ~45
+        # Artifact Registry locations must become its own CheckError (with
+        # region context) and must not wipe out repositories already found in
+        # other locations.
+        session = self._session(repos=0, locations=["broken-region", "europe-west3"])
+        service = session.service("artifactregistry")
+        chain = service.projects.return_value.locations.return_value.repositories.return_value
+
+        def list_repositories(**kwargs):
+            execute_mock = MagicMock()
+            if kwargs.get("parent", "").endswith("broken-region"):
+                execute_mock.execute.side_effect = RuntimeError("boom")
+            else:
+                execute_mock.execute.return_value = {"repositories": [{"name": "repo-1"}]}
+            return execute_mock
+
+        chain.list.side_effect = list_repositories
+
+        result = asyncio.run(CheckArtifactRegistryScanning().execute(session))
+
+        assert len(_compliant(result)) == 1
+        region_errors = [e for e in result.errors if e.region == "broken-region"]
+        assert len(region_errors) == 1
+        assert region_errors[0].error_type == "RuntimeError"
 
 
 class TestCheckGkeNodeVersions:
