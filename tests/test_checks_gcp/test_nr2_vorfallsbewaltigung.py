@@ -47,11 +47,16 @@ def monitoring_clients(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
 
 @pytest.fixture
 def logging_clients(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
-    from google.cloud import logging_v2
+    # SDK-Pin-Verifikation 27.07.2026: `google.cloud.logging_v2` never re-exported
+    # these clients at its top level (the old mock patched a name that only existed
+    # in the mock, never in the SDK — that's why the check errored for every
+    # customer while the test stayed green). The real classes live in the
+    # `services.metrics_service_v2` / `services.config_service_v2` submodules.
+    from google.cloud.logging_v2.services import config_service_v2, metrics_service_v2
 
     client = MagicMock()
-    monkeypatch.setattr(logging_v2, "MetricsServiceV2Client", lambda credentials: client, raising=False)
-    monkeypatch.setattr(logging_v2, "ConfigServiceV2Client", lambda credentials: client, raising=False)
+    monkeypatch.setattr(metrics_service_v2, "MetricsServiceV2Client", lambda credentials: client)
+    monkeypatch.setattr(config_service_v2, "ConfigServiceV2Client", lambda credentials: client)
     return client
 
 
@@ -134,6 +139,23 @@ class TestCheckNotificationChannels:
         assert not result.findings
         assert len(result.errors) == 1
         assert result.errors[0].error_type == "RuntimeError"
+
+
+def test_real_sdk_logging_v2_never_reexports_service_clients_at_top_level():
+    # Regression guard for mock drift (SDK-Pin-Verifikation 27.07.2026, covers
+    # GCP-NR2-004 and GCP-NR2-005): `google.cloud.logging_v2.MetricsServiceV2Client`
+    # / `.ConfigServiceV2Client` never existed in any installed version — the
+    # previous code imported them from there and errored on every real scan, while
+    # the unit test mock patched that same nonexistent path with `raising=False`
+    # and stayed green. The real classes only live in the `services.*` submodules.
+    from google.cloud import logging_v2
+    from google.cloud.logging_v2.services.config_service_v2 import ConfigServiceV2Client
+    from google.cloud.logging_v2.services.metrics_service_v2 import MetricsServiceV2Client
+
+    assert not hasattr(logging_v2, "MetricsServiceV2Client")
+    assert not hasattr(logging_v2, "ConfigServiceV2Client")
+    assert MetricsServiceV2Client.__name__ == "MetricsServiceV2Client"
+    assert ConfigServiceV2Client.__name__ == "ConfigServiceV2Client"
 
 
 class TestCheckLogBasedAlerts:

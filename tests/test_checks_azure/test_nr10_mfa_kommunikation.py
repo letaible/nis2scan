@@ -124,10 +124,20 @@ class TestCheckPhishingResistantMfa:
 
 
 class TestCheckVpnBastion:
-    def _session(self, has_bastion: bool) -> FakeAzureSession:
+    def _session(
+        self,
+        has_bastion: bool,
+        resource_groups: list[str] | None = None,
+        gateways_by_rg: dict[str, list] | None = None,
+    ) -> FakeAzureSession:
+        # virtual_network_gateways has no subscription-wide list_all() — gateways are
+        # only listable per resource group, hence resource_groups.list() + a per-RG
+        # list(rg_name) fake below (mirrors the real CheckVpnBastion.execute()).
+        gateways_by_rg = gateways_by_rg or {}
         network_client = MagicMock()
-        network_client.virtual_network_gateways.list_all.return_value = []
+        network_client.virtual_network_gateways.list.side_effect = lambda rg_name: gateways_by_rg.get(rg_name, [])
         resource_client = MagicMock()
+        resource_client.resource_groups.list.return_value = [SimpleNamespace(name=rg) for rg in (resource_groups or [])]
         resource_client.resources.list.return_value = [SimpleNamespace(name="bastion-1")] if has_bastion else []
         return FakeAzureSession(
             {"NetworkManagementClient": network_client, "ResourceManagementClient": resource_client}
@@ -144,6 +154,92 @@ class TestCheckVpnBastion:
 
         assert len(_maengel(result)) == 1
         assert not _compliant(result)
+
+    def test_vpn_gateway_in_resource_group_produces_positive_evidence(self):
+        # B-fix (SDK-Pin-Verifikation 27.07.2026): list_all() never existed — gateways
+        # must be discovered per resource group.
+        session = self._session(
+            has_bastion=False,
+            resource_groups=["rg1", "rg2"],
+            gateways_by_rg={"rg1": [SimpleNamespace(name="gw1")]},
+        )
+
+        result = asyncio.run(CheckVpnBastion().execute(session))
+
+        compliant = _compliant(result)
+        assert len(compliant) == 1
+        assert compliant[0].current_state["vpn_gateways"] == 1
+        assert not _maengel(result)
+
+    def test_resource_group_query_failure_produces_check_error_but_keeps_other_gateways(self):
+        # Code-Health-Guideline: one failing resource group must never silently skip
+        # the rest — it becomes a CheckError, while gateways from other resource
+        # groups still count.
+        def list_side_effect(rg_name):
+            if rg_name == "rg-broken":
+                raise RuntimeError("transient failure")
+            return [SimpleNamespace(name="gw1")] if rg_name == "rg-ok" else []
+
+        network_client = MagicMock()
+        network_client.virtual_network_gateways.list.side_effect = list_side_effect
+        resource_client = MagicMock()
+        resource_client.resource_groups.list.return_value = [
+            SimpleNamespace(name="rg-broken"),
+            SimpleNamespace(name="rg-ok"),
+        ]
+        resource_client.resources.list.return_value = []
+        session = FakeAzureSession(
+            {"NetworkManagementClient": network_client, "ResourceManagementClient": resource_client}
+        )
+
+        result = asyncio.run(CheckVpnBastion().execute(session))
+
+        assert len(_compliant(result)) == 1
+        assert not _maengel(result)
+        assert len(result.errors) == 1
+        assert result.errors[0].error_type == "VpnGatewayQueryFailed"
+
+    def test_partial_rg_failure_without_gateways_emits_no_negative_finding(self):
+        # Fail-safe (ADR-0016, legal review 27.07.2026): if some resource-group
+        # queries failed and no gateway was found in the REST, the check must
+        # NOT claim "weder VPN Gateway noch Bastion Host" for the whole
+        # subscription — the failed groups are unknown territory. Only the
+        # CheckError is emitted (same pattern as AZ-NR6-004).
+        def list_side_effect(rg_name):
+            if rg_name == "rg-broken":
+                raise RuntimeError("transient failure")
+            return []
+
+        network_client = MagicMock()
+        network_client.virtual_network_gateways.list.side_effect = list_side_effect
+        resource_client = MagicMock()
+        resource_client.resource_groups.list.return_value = [
+            SimpleNamespace(name="rg-broken"),
+            SimpleNamespace(name="rg-empty"),
+        ]
+        resource_client.resources.list.return_value = []
+        session = FakeAzureSession(
+            {"NetworkManagementClient": network_client, "ResourceManagementClient": resource_client}
+        )
+
+        result = asyncio.run(CheckVpnBastion().execute(session))
+
+        assert not _maengel(result)
+        assert not _compliant(result)
+        assert len(result.errors) == 1
+        assert result.errors[0].error_type == "VpnGatewayQueryFailed"
+
+    def test_real_sdk_virtual_network_gateways_operations_has_no_list_all(self):
+        # Regression guard for mock drift (SDK-Pin-Verifikation 27.07.2026): the real
+        # azure-mgmt-network VirtualNetworkGatewaysOperations has never had a
+        # subscription-wide list_all() — only list(resource_group_name).
+        import inspect
+
+        from azure.mgmt.network.operations import VirtualNetworkGatewaysOperations
+
+        assert not hasattr(VirtualNetworkGatewaysOperations, "list_all")
+        sig = inspect.signature(VirtualNetworkGatewaysOperations.list)
+        assert "resource_group_name" in sig.parameters
 
 
 class TestCheckO365TlsEnforcement:

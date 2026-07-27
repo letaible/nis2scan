@@ -28,10 +28,13 @@ def _maengel(result):
 class TestCheckAuditLogIntegrity:
     @pytest.fixture
     def logging_client(self, monkeypatch: pytest.MonkeyPatch) -> MagicMock:
-        from google.cloud import logging_v2
+        # SDK-Pin-Verifikation 27.07.2026: `google.cloud.logging_v2` never re-exported
+        # ConfigServiceV2Client at its top level — the real class lives in the
+        # `services.config_service_v2` submodule (see nr2_vorfallsbewaltigung fixture).
+        from google.cloud.logging_v2.services import config_service_v2
 
         client = MagicMock()
-        monkeypatch.setattr(logging_v2, "ConfigServiceV2Client", lambda credentials: client, raising=False)
+        monkeypatch.setattr(config_service_v2, "ConfigServiceV2Client", lambda credentials: client)
         return client
 
     def test_storage_sink_produces_positive_evidence(self, logging_client: MagicMock):
@@ -53,6 +56,16 @@ class TestCheckAuditLogIntegrity:
 
         assert len(_maengel(result)) == 1
         assert not _compliant(result)
+
+    def test_real_sdk_config_service_v2_client_lives_in_services_submodule(self):
+        # Regression guard for mock drift (SDK-Pin-Verifikation 27.07.2026, GCP-NR6-001):
+        # `google.cloud.logging_v2.ConfigServiceV2Client` never existed — the real class
+        # only lives in `google.cloud.logging_v2.services.config_service_v2`.
+        from google.cloud import logging_v2
+        from google.cloud.logging_v2.services.config_service_v2 import ConfigServiceV2Client
+
+        assert not hasattr(logging_v2, "ConfigServiceV2Client")
+        assert ConfigServiceV2Client.__name__ == "ConfigServiceV2Client"
 
 
 class TestCheckSecurityHealthAnalytics:

@@ -284,16 +284,40 @@ class CheckVpnBastion(BaseCheck):
         for sub_id in session.subscription_ids:
             try:
                 from azure.mgmt.network import NetworkManagementClient
-
-                network_client = session.get_client(NetworkManagementClient, sub_id)
-
-                # Check for VPN gateways
-                vpn_gateways = list(network_client.virtual_network_gateways.list_all())
-
-                # Check for Bastion hosts
                 from azure.mgmt.resource.resources import ResourceManagementClient
 
+                network_client = session.get_client(NetworkManagementClient, sub_id)
                 resource_client = session.get_client(ResourceManagementClient, sub_id)
+
+                # VPN Gateways have no subscription-wide list_all() — they can only be
+                # listed per resource group. List resource groups first, then query each
+                # one; a failing resource group is reported as a CheckError and never
+                # silently skips the rest (Code-Health-Guideline).
+                resource_groups = list(resource_client.resource_groups.list())
+                vpn_gateways: list[Any] = []
+                failed_resource_groups: list[str] = []
+                for rg in resource_groups:
+                    try:
+                        vpn_gateways.extend(network_client.virtual_network_gateways.list(rg.name))
+                    except Exception:
+                        failed_resource_groups.append(rg.name)
+
+                if failed_resource_groups:
+                    failed_summary = ", ".join(failed_resource_groups[:5])
+                    errors.append(
+                        CheckError(
+                            check_id=self.check_id,
+                            error_type="VpnGatewayQueryFailed",
+                            message=(
+                                f"{len(failed_resource_groups)} von {len(resource_groups)} "
+                                f"VPN-Gateway-Abfragen in Subscription {sub_id} fehlgeschlagen: "
+                                f"{failed_summary}{'...' if len(failed_resource_groups) > 5 else ''}"
+                            ),
+                            region="global",
+                        )
+                    )
+
+                # Check for Bastion hosts
                 bastion_hosts = [
                     r for r in resource_client.resources.list(filter="resourceType eq 'Microsoft.Network/bastionHosts'")
                 ]
@@ -323,6 +347,14 @@ class CheckVpnBastion(BaseCheck):
                             iso27001_control="A.8.20 Netzwerksicherheit",
                         )
                     )
+                elif failed_resource_groups:
+                    # Fail-safe (ADR-0016, legal review 27.07.2026): with partly
+                    # failed resource-group queries and no gateway found in the
+                    # REST, the subscription-wide "weder ... noch ..." statement
+                    # would claim completeness we do not have. No finding — the
+                    # CheckError above already reports the partial failure
+                    # (same pattern as AZ-NR6-004, nr6_wirksamkeit.py).
+                    pass
                 else:
                     findings.append(
                         Finding(
@@ -350,8 +382,13 @@ class CheckVpnBastion(BaseCheck):
                                 "--resource-group <rg> --vnet-name <vnet> --location <loc>"
                             ),
                             remediation_effort="HIGH",
+                            # This branch is only reachable with FULL coverage
+                            # (failed_resource_groups is empty, see elif above),
+                            # so the total count IS the successfully queried count.
                             audit_evidence=(
-                                "virtual_network_gateways.list_all(): 0 gateways, resources.list(bastionHosts): 0 hosts"
+                                f"virtual_network_gateways.list(rg) across all {len(resource_groups)} "
+                                "resource group(s), 0 failures: 0 gateways, "
+                                "resources.list(bastionHosts): 0 hosts"
                             ),
                         )
                     )

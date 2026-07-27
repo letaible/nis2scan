@@ -69,7 +69,7 @@ class CheckDefenderSecureScore(BaseCheck):
                     continue
 
                 for score in scores:
-                    if score.current_score is None or score.max_score is None:
+                    if score.current is None or score.max is None:
                         errors.append(
                             CheckError(
                                 check_id=self.check_id,
@@ -80,8 +80,8 @@ class CheckDefenderSecureScore(BaseCheck):
                         )
                         continue
 
-                    current = score.current_score
-                    max_score = score.max_score
+                    current = score.current
+                    max_score = score.max
                     percentage = (current / max_score * 100) if max_score > 0 else 0
 
                     if percentage >= MIN_SECURE_SCORE_PERCENT:
