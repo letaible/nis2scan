@@ -7,6 +7,23 @@ stehen in den [GitHub Releases](https://github.com/letaible/nis2scan/releases).
 
 ## Unveröffentlicht
 
+### Behoben
+
+- CLI-Härtetest-Fixpaket (10 bestätigte Befunde aus Kundenreisen gegen
+  echte Clouds): `permissions --format terraform/json` erzeugt bei
+  Umleitung in Dateien jetzt gültige Ausgabe (kein 80-Spalten-Umbruch
+  mehr); fehlende Cloud-Zugangsdaten werden deutsch erklärt (Ursache und
+  nächster Schritt je Provider, Fehlermeldungen jetzt auch im
+  Markdown-Report — im Extern-Profil weiterhin nie); Bedien- und
+  Konfigurationsfehler brechen VOR dem Scan ab und nutzen den neuen
+  Exit-Code 64 (vorher kollidierten sie mit der HIGH/CRITICAL-Semantik):
+  unbekannte AWS-Region (vorher minutenlanger stiller Hänger),
+  `--scope` außerhalb 1–10, `--output` auf eine existierende Datei
+  (vorher ging das Scan-Ergebnis verloren), unbekanntes `--format`
+  inkl. PDF-Hinweis vor Scan-Beginn, explizit angegebene fehlende
+  `--config`-Datei (wurde stillschweigend ignoriert). Die
+  Ausnahmen-Datei wird vor dem ersten Cloud-Aufruf geladen.
+
 ### Hinzugefügt
 
 - `nis2scan --version` zeigt jetzt zusätzlich die Edition (Free/Professional)
