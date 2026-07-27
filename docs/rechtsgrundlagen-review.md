@@ -443,3 +443,41 @@ Verlaufsabschnitte (Batches Nr. 4–10) und der Kampagnen-Bilanz.
   Checks unverändert — Einordnung analog Vorsorge-Review SaaS-UI-Texte
   2026-07-25). Transparenz: Merge erfolgt auf dieser Grundlage; der
   Gründer kann die Einordnung nachträglich verwerfen.
+
+#### Review Pseudonymisierungs-Fixpaket — 15 ADR-0011-Lücken (2026-07-27)
+
+- Gegenstand (Branch `pseu/deny-list-fixes`): Systematischer Sweep über
+  alle 154 Checks nach dem Härtetest-Fund AZ-NR8-001 (Storage-Account-Name
+  roh im Extern-Report). 15 bestätigte Lücken (9 Azure, 4 GCP, AWS sauber,
+  plus Reviewer-Nachfund GCP-NR8-006): in Freitext interpolierte
+  Ressourcen-/Nutzernamen ohne Deny-List-Erfassung. Fixes ausschließlich
+  über current_state-Suffix-Keys (GCP-NR4-001-Präzedenzmuster);
+  pseudonymize.py unverändert; 23 End-to-End-Tests.
+- **Zweitprüfung (legal-reviewer): PASS nach 2 Auflagen.** A1: Textinvarianz
+  mechanisch belegt (git-diff-Grep: null geänderte Rechtstext-Zeilen,
+  Beleg im Commit e5b3642). A2: GCP-NR8-006 konstruktiv als 15. Fix
+  geschlossen (voller Zertifikatspfad unter Suffix-Key, deckt auch die
+  Projekt-Nummer-Variante ab) statt nur dokumentiert.
+- **Gründer-Vermerk: ERTEILT (Chat-Freigabe 27.07.2026 „Beide erteilen",
+  inkl. Gegenzeichnung des Textinvarianz-Belegs).** Beide Vermerke liegen
+  vor — Merge frei.
+
+#### Review SDK-Check-Reparaturen — 5 nie-funktionierende Aufrufe (2026-07-27)
+
+- Gegenstand (Branch `sdk/never-worked-check-fixes`): AZ-NR6-001
+  (current/max statt nie existenter Attribute), AZ-NR10-003
+  (RG-Enumeration statt nie existentem list_all), GCP-NR2-004/005 +
+  GCP-NR6-001 (echte logging_v2.services-Importpfade, type-ignores
+  entfernt). Ursache der Unsichtbarkeit: Mock-Drift — Unit-Mocks bauten
+  exakt die falschen Attribute nach; je Check jetzt ein
+  Echtklassen-Guard-Test.
+- **Zweitprüfung (legal-reviewer): FAIL → 3 Auflagen → umgesetzt →
+  Nachprüfung PASS.** Auflagen (alle AZ-NR10-003, ADR-0016): Negativ-Finding
+  „weder VPN Gateway noch Bastion Host" nur bei vollständiger, fehlerfreier
+  RG-Abdeckung (Teilausfall → nur CheckError, Muster AZ-NR6-004);
+  audit_evidence weist die tatsächliche Abdeckung aus; Testfall für
+  Teilausfall ohne Fund. Deutsche Texte zeichengleich
+  (Reviewer-verifiziert). Nicht sperrend protokolliert: Multi-API-Aggregat-
+  Import im SecureScoreItem-Guard.
+- **Gründer-Vermerk: ERTEILT (Chat-Freigabe 27.07.2026 „Beide erteilen").**
+  Beide Vermerke liegen vor — Merge frei.
