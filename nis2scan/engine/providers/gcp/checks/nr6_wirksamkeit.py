@@ -47,9 +47,9 @@ class CheckAuditLogIntegrity(BaseCheck):
 
         for project_id in session.project_ids:
             try:
-                from google.cloud import logging_v2
+                from google.cloud.logging_v2.services.config_service_v2 import ConfigServiceV2Client
 
-                client = logging_v2.ConfigServiceV2Client(  # type: ignore[attr-defined]
+                client = ConfigServiceV2Client(
                     credentials=session.credentials,
                 )
                 sinks = list(

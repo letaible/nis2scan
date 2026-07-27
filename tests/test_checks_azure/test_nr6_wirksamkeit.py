@@ -29,7 +29,7 @@ class TestCheckDefenderSecureScore:
     def _client(self, current: int, maximum: int) -> MagicMock:
         client = MagicMock()
         client.secure_scores.list.return_value = [
-            SimpleNamespace(current_score=current, max_score=maximum),
+            SimpleNamespace(current=current, max=maximum),
         ]
         return client
 
@@ -65,11 +65,11 @@ class TestCheckDefenderSecureScore:
         assert result.errors[0].error_type == "NoSecureScoreData"
 
     def test_incomplete_score_produces_check_error_no_finding(self):
-        # B-Nr.6-7: current_score/max_score None used to be defaulted to 0/1,
+        # B-Nr.6-7: current/max None used to be defaulted to 0/1,
         # fabricating a 0% Mangel-Finding instead of reporting "unknown".
         client = MagicMock()
         client.secure_scores.list.return_value = [
-            SimpleNamespace(current_score=None, max_score=50),
+            SimpleNamespace(current=None, max=50),
         ]
         session = FakeAzureSession({"SecurityCenter": client})
 
@@ -78,6 +78,22 @@ class TestCheckDefenderSecureScore:
         assert not result.findings
         assert len(result.errors) == 1
         assert result.errors[0].error_type == "IncompleteSecureScore"
+
+    def test_real_sdk_secure_score_item_uses_current_and_max(self):
+        # Regression guard for mock drift (SDK-Pin-Verifikation 27.07.2026): the real
+        # azure-mgmt-security SecureScoreItem exposes `current`/`max` (wire keys
+        # properties.score.current / properties.score.max), never `current_score` /
+        # `max_score`. Deserialize an actual wire-format payload through the real SDK
+        # class (no network) so a future SDK bump that renames these fields fails here
+        # instead of only in production.
+        from azure.mgmt.security.models import SecureScoreItem
+
+        item = SecureScoreItem.deserialize({"properties": {"score": {"current": 45, "max": 50}}})
+
+        assert item.current == 45
+        assert item.max == 50
+        assert not hasattr(item, "current_score")
+        assert not hasattr(item, "max_score")
 
 
 class TestCheckPolicyComplianceState:
