@@ -290,6 +290,21 @@ passenden Ebene, nicht nur Unit.
   (tests/test_cli/), and a CI smoke test of the CLI surface is planned (P1).
 - Exit codes since 0.1.5: 0 = no high/critical findings, 1 = high,
   2 = critical, 3 = scan inconclusive (only errored checks, nothing assessed).
+  Since 27.07.2026 additionally: 64 = usage/configuration error (EX_USAGE) —
+  every CLI validation aborts BEFORE any scan work with 64; never reuse 1/2
+  for usage errors (they mean HIGH/CRITICAL findings in CI pipelines).
+- Machine-readable CLI output (permissions --format terraform/json) must use
+  plain print(), never Rich console.print() — Rich hard-wraps at 80 cols on
+  non-TTY stdout and corrupted HCL/JSON when redirected to a file.
+- ADR-0011 collective findings: any resource/user name interpolated into a
+  finding's German text MUST also be registered under a current_state key
+  with a deny-list suffix (_name/_id/_arn/_email, string or list of strings,
+  never dicts) — otherwise it appears RAW in EXTERN reports. 14 such leaks
+  were found in the 27.07.2026 sweep (Azure/GCP collective findings).
+- SDK drift: fresh installs resolve NEWER dependency majors than dev/CI —
+  azure-mgmt-security/monitor 7.0 and google-cloud-logging 3.16 silently
+  broke 15 checks. Cloud SDK deps need upper bounds in pyproject; a weekly
+  SDK-canary CI job is planned.
 
 ### AWS
 - `AwsSession.client()` uses `region=` NOT `region_name=` — this is a custom wrapper
