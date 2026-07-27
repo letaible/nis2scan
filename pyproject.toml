@@ -31,12 +31,20 @@ dependencies = [
     "azure-mgmt-resource-policy>=1.0.0b2",
     "azure-mgmt-storage>=21.0.0",
     "azure-mgmt-compute>=31.0.0",
-    "azure-mgmt-network>=26.0.0",
+    "azure-mgmt-network>=26.0.0",  # NOTE: list_all() used by nr10 VPN-gateway check does not exist in ANY
+                                    # known version (26.0.0-31.0.1) -- pre-existing code bug, not SDK drift,
+                                    # deliberately left unpinned (see pin-verification report 27.07.2026)
     "azure-mgmt-keyvault>=10.3.0",
     "azure-mgmt-sql>=3.0.1",
     "azure-mgmt-web>=7.2.0",
-    "azure-mgmt-monitor>=6.0.0",
-    "azure-mgmt-security>=6.0.0",
+    "azure-mgmt-monitor>=6.0.0,<7.0.0",  # 7.0.0 removed the diagnostic_settings operation group entirely
+                                          # from MonitorManagementClient (breaks AZ-NR1-004/AZ-NR6-004)
+    "azure-mgmt-security>=6.0.0,<7.0.0",  # 7.0.0 bumped the default pricings API to 2024-01-01, which added
+                                           # a mandatory scope_id arg to pricings.list() (breaks AZ-NR1-001/
+                                           # AZ-NR5-001). NOTE: AZ-NR6-001's separate SecureScoreItem.current_score
+                                           # AttributeError is NOT fixed by this pin -- the real attribute is
+                                           # `current`/`max` in every checked version incl. 6.0.0; that is a
+                                           # pre-existing code bug in nr6_wirksamkeit.py, not SDK drift.
     "azure-mgmt-recoveryservices>=3.0.0",
     "azure-mgmt-recoveryservicesbackup>=9.0.0",
     "azure-mgmt-containerregistry>=10.0.0",
@@ -49,7 +57,11 @@ dependencies = [
     "google-cloud-compute>=1.18.0",
     "google-cloud-storage>=2.16.0",
     "google-cloud-kms>=2.21.0",
-    "google-cloud-logging>=3.10.0",
+    "google-cloud-logging>=3.10.0",  # NOTE: logging_v2.MetricsServiceV2Client/ConfigServiceV2Client (used by
+                                      # GCP-NR2-004/005, GCP-NR6-001) were never top-level exports in ANY
+                                      # release 2.0.0-3.16.1 -- pre-existing code bug (wrong import path;
+                                      # correct: google.cloud.logging_v2.services.{metrics_service_v2,
+                                      # config_service_v2}.client), not SDK drift, deliberately left unpinned.
     "google-cloud-monitoring>=2.21.0",
     "google-cloud-securitycenter>=1.28.0",
     "google-cloud-container>=2.44.0",
