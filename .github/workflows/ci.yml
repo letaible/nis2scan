@@ -98,9 +98,12 @@ jobs:
         # This installs the actual built artifact, like a real user would
         # (Audit TEST-P0-Lehre). pytest is installed separately since the
         # smoke venv otherwise carries none of the [dev] extras.
+        # python -m pip on purpose: on Windows, pip.exe cannot upgrade itself
+        # ("To modify pip, please run ...python.exe -m pip") — the direct
+        # pip.exe call broke the windows-latest leg (run 30264268127).
         run: |
-          "$BIN_DIR/pip$EXT" install --upgrade pip
-          "$BIN_DIR/pip$EXT" install dist/*.whl "pytest>=8.0.0"
+          "$BIN_DIR/python$EXT" -m pip install --upgrade pip
+          "$BIN_DIR/python$EXT" -m pip install dist/*.whl "pytest>=8.0.0"
           echo "NIS2SCAN_SMOKE_BIN=$BIN_DIR/nis2scan$EXT" >> "$GITHUB_ENV"
       - name: Run CLI package smoke tests (real installed wheel, subprocess)
         # Replaces the previous hand-rolled bash exit-code checks below this
