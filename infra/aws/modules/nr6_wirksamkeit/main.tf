@@ -23,8 +23,10 @@ resource "aws_cloudwatch_log_group" "compliant" {
 
 # --- Non-compliant: Log group with too-short retention ---
 resource "aws_cloudwatch_log_group" "non_compliant" {
-  name              = "/nis2scan/${var.name}-non-compliant-${var.suffix}"
-  retention_in_days = 7
+  name = "/nis2scan/${var.name}-non-compliant-${var.suffix}"
+  # Task #54 Szenario-Toggle: "hardened"/"mixed" match the compliant
+  # retention (365 days) above.
+  retention_in_days = var.fixture_compliance["nr6_log_retention"] ? 365 : 7
 
   tags = {
     Name  = "${var.name}-loggroup-non-compliant-${var.suffix}"

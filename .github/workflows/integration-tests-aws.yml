@@ -4,11 +4,22 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      scenario:
+        description: "Compliance-Szenario der Testinfrastruktur (Task #54, siehe infra/aws/variables.tf)"
+        type: choice
+        options: [gaps, hardened, mixed]
+        default: gaps
   # Testpyramide Stufe 1 (Gründer-Vorgabe, CLAUDE.md "Test-Strategie"): als
   # Release-Gate von release.yml per `uses:` aufgerufen. Sekrete kommen über
   # `secrets: inherit` im Caller — deshalb kein eigener `secrets:`-Block hier
   # nötig (GitHub Actions gibt sie trotzdem an diesen Workflow durch).
   workflow_call:
+    inputs:
+      scenario:
+        description: "Compliance-Szenario der Testinfrastruktur (Task #54)"
+        type: string
+        default: gaps
   schedule:
     # Wöchentlicher Regressionslauf (Gründer-Vorgabe 27.07.2026: Härtetest-Journeys
     # regelmäßig). Ein schedule-Event ist kein PR-/Push-Kontext — dieser Workflow
@@ -16,12 +27,24 @@ on:
     # (Concurrency-Gruppe, fällt für schedule auf den Default-Branch-Ref zurück)
     # und github.run_id — beide sind bei schedule-Events unverändert vorhanden.
     # Secrets/OIDC-Permissions bleiben identisch (workflow-weiter permissions-Block).
+    #
+    # Task #54: der Wochen-Cron ist der EINZIGE Trigger, der alle drei
+    # Szenarien fährt (siehe determine-scenarios-Job unten) — PR/dispatch/
+    # workflow_call bekommen genau das eine gewählte (oder Default-)Szenario.
     - cron: "0 3 * * 1" # Montags 03:00 UTC
 
 permissions:
   id-token: write
   contents: read
 
+# Task #54: bewusst PRO PROVIDER (nicht pro Szenario) — mehrere Fixtures sind
+# Konto-Singletons (IAM-Passwort-Policy, EBS-Default-Encryption, S3-Account-
+# Public-Access-Block, siehe Kommentare in infra/aws/main.tf und den
+# betroffenen Modulen). Zwei Szenario-Applies dürfen im selben AWS-Konto NIE
+# parallel laufen, egal ob aus derselben Matrix oder aus zwei getrennten
+# Workflow-Läufen — eine gemeinsame, szenario-unabhängige Gruppe serialisiert
+# beides. Innerhalb EINES Laufs sorgt außerdem strategy.max-parallel: 1 auf
+# dem integration-Job dafür, dass die Matrix-Legs strikt nacheinander laufen.
 concurrency:
   group: integration-aws-${{ github.ref }}
   cancel-in-progress: true
@@ -31,12 +54,45 @@ env:
   TF_VAR_run_id: ${{ github.run_id }}
 
 jobs:
+  # Task #54: baut die Szenario-Matrix für den integration-Job. Nur der
+  # Wochen-Cron (schedule) fährt alle drei Szenarien — jeder andere Trigger
+  # (PR, workflow_dispatch, workflow_call/Release-Gate) bekommt genau das
+  # eine gewählte bzw. Default-Szenario ("gaps"), damit PR-Läufe und das
+  # Release-Gate genauso schnell/günstig bleiben wie heute.
+  determine-scenarios:
+    name: Determine Scenario Matrix
+    runs-on: ubuntu-latest
+    outputs:
+      scenarios: ${{ steps.matrix.outputs.scenarios }}
+    steps:
+      - name: Build scenario matrix
+        id: matrix
+        env:
+          CHOSEN_SCENARIO: ${{ inputs.scenario || 'gaps' }}
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            echo 'scenarios=["gaps","hardened","mixed"]' >> "$GITHUB_OUTPUT"
+          else
+            echo "scenarios=[\"$CHOSEN_SCENARIO\"]" >> "$GITHUB_OUTPUT"
+          fi
+
   integration:
+    needs: determine-scenarios
+    strategy:
+      # Serialisiert die Matrix-Legs (siehe concurrency-Kommentar oben) —
+      # niemals mehrere Szenarien gleichzeitig gegen dasselbe Konto.
+      max-parallel: 1
+      fail-fast: false
+      matrix:
+        scenario: ${{ fromJson(needs.determine-scenarios.outputs.scenarios) }}
     runs-on: ubuntu-latest
     # Raised from 30 (audit 27.07.2026): the new CLI-E2E step below runs 5
     # additional real scans (intern, extern, and 3 scoped exceptions-flow
     # scans) on top of the existing pytest run — needs headroom.
     timeout-minutes: 45
+    env:
+      TF_VAR_scenario: ${{ matrix.scenario }}
+      NIS2SCAN_SCENARIO: ${{ matrix.scenario }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4

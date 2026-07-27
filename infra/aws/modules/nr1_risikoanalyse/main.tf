@@ -79,10 +79,14 @@ resource "aws_cloudtrail" "compliant" {
 # ---------------------------------------------------------------------------
 
 resource "aws_cloudtrail" "non_compliant" {
-  name                       = "${var.name}-trail-non-compliant"
-  s3_bucket_name             = aws_s3_bucket.trail_logs.id
-  s3_key_prefix              = "non-compliant"
-  enable_log_file_validation = false
+  name           = "${var.name}-trail-non-compliant"
+  s3_bucket_name = aws_s3_bucket.trail_logs.id
+  s3_key_prefix  = "non-compliant"
+  # Task #54 Szenario-Toggle: "hardened"/"mixed" schließen diese Lücke, indem
+  # Log-File-Validation aktiviert wird — die Rolle dieser Ressource wechselt
+  # dann von "non_compliant" zu "compliant" für AWS-NR1-004 (siehe
+  # fixture_expectations in ../../outputs.tf).
+  enable_log_file_validation = var.fixture_compliance["nr1_cloudtrail_log_validation"]
   is_multi_region_trail      = false
 
   depends_on = [aws_s3_bucket_policy.trail_logs]

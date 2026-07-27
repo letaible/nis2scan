@@ -27,6 +27,10 @@ from nis2scan.engine.models.config import ProviderConfig, ScanConfig
 from nis2scan.engine.providers.aws.checks.nr8_kryptographie import CheckEbsEncryption
 from nis2scan.engine.registry import CheckRegistry
 from nis2scan.engine.scanner import run_scan
+from tests.integration.conftest import SKIP_UNLESS_GAPS_SCENARIO
+
+pytestmark = SKIP_UNLESS_GAPS_SCENARIO
+
 
 CHECK_ID = "AWS-NR8-002"
 EXCEPTION_REASON = "Bekannte Testinfrastruktur-Abweichung, Ticket INT-TEST-1"

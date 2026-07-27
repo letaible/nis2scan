@@ -6,6 +6,9 @@ from nis2scan.engine.providers.aws.checks.nr1_risikoanalyse import (
     CheckGuardDutyRiskAnalysis,
     CheckOrganizationsScp,
 )
+from tests.integration.conftest import SKIP_UNLESS_GAPS_SCENARIO
+
+pytestmark = SKIP_UNLESS_GAPS_SCENARIO
 
 
 @pytest.mark.integration

@@ -45,7 +45,12 @@ resource "aws_iam_user_login_profile" "with_mfa" {
   password_reset_required = true
 }
 
-# --- User WITHOUT MFA (non-compliant) ---
+# --- User WITHOUT MFA / hardened toggle (Task #54) ---
+# "gaps": no MFA device attached (non-compliant, as before).
+# "hardened"/"mixed" with fixture_compliance["nr9_iam_mfa"]: attach + enable a
+# virtual MFA device just like the with_mfa user above (same enable_mfa.py
+# mechanism), so this user becomes AWS-NR9-001-compliant without renaming it
+# (the username stays the tracked resource_ref in fixture_expectations).
 resource "aws_iam_user" "without_mfa" {
   name          = "${var.name}-nr9-nomfa-user"
   force_destroy = true
@@ -56,6 +61,26 @@ resource "aws_iam_user" "without_mfa" {
 resource "aws_iam_user_login_profile" "without_mfa" {
   user                    = aws_iam_user.without_mfa.name
   password_reset_required = true
+}
+
+resource "aws_iam_virtual_mfa_device" "without_mfa_hardened" {
+  count                   = var.fixture_compliance["nr9_iam_mfa"] ? 1 : 0
+  virtual_mfa_device_name = "${var.name}-nr9-nomfa-device"
+
+  tags = { Name = "${var.name}-nr9-nomfa-device" }
+}
+
+resource "null_resource" "enable_mfa_without_mfa_hardened" {
+  count = var.fixture_compliance["nr9_iam_mfa"] ? 1 : 0
+
+  depends_on = [
+    aws_iam_user.without_mfa,
+    aws_iam_virtual_mfa_device.without_mfa_hardened,
+  ]
+
+  provisioner "local-exec" {
+    command = "python3 ${path.module}/../../scripts/enable_mfa.py --username \"${aws_iam_user.without_mfa.name}\" --serial \"${aws_iam_virtual_mfa_device.without_mfa_hardened[0].arn}\" --seed \"${aws_iam_virtual_mfa_device.without_mfa_hardened[0].base_32_string_seed}\""
+  }
 }
 
 # ---------------------------------------------------------------------------
@@ -78,12 +103,17 @@ resource "aws_iam_access_key" "fresh_key" {
 # ---------------------------------------------------------------------------
 # NR9-003: S3 Public Access Block
 # ---------------------------------------------------------------------------
-# ignore_public_acls is deliberately false so NOT all four settings are true.
-# The check should produce a finding.
-
+# "gaps": ignore_public_acls is deliberately false so NOT all four settings
+# are true — the check should produce a finding. Task #54 Szenario-Toggle
+# "nr9_s3_account_pab" flips it to true for "hardened"/"mixed".
+#
+# ACHTUNG Konto-global: aws_s3_account_public_access_block is a per-account
+# singleton, like the IAM password policy in nr7_cyberhygiene — see the
+# concurrency-group comment there. Never run two scenarios' applies in
+# parallel against the same account.
 resource "aws_s3_account_public_access_block" "this" {
   block_public_acls       = true
-  ignore_public_acls      = false
+  ignore_public_acls      = var.fixture_compliance["nr9_s3_account_pab"]
   block_public_policy     = true
   restrict_public_buckets = true
 }
@@ -116,18 +146,18 @@ resource "aws_security_group" "compliant" {
   tags = { Name = "${var.name}-nr9-sg-compliant" }
 }
 
-# --- Non-compliant SG: SSH open to the world ---
+# --- Non-compliant / hardened toggle SG: SSH open to the world ---
 resource "aws_security_group" "non_compliant" {
   name        = "${var.name}-nr9-sg-non-compliant"
   description = "Non-compliant SG - SSH from 0.0.0.0/0"
   vpc_id      = var.vpc_id
 
   ingress {
-    description = "SSH from anywhere"
+    description = "SSH from anywhere ('gaps') or restricted internal range ('hardened'/'mixed', Task #54 Szenario-Toggle)"
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = var.fixture_compliance["nr9_security_group"] ? ["10.0.0.0/8"] : ["0.0.0.0/0"]
   }
 
   egress {
@@ -143,7 +173,9 @@ resource "aws_security_group" "non_compliant" {
 # ---------------------------------------------------------------------------
 # NR9-005: IAM Wildcard Policy
 # ---------------------------------------------------------------------------
-# Create an IAM policy with Action: * (non-compliant).
+# "gaps": IAM policy with Action: * / Resource: * (non-compliant). Task #54
+# Szenario-Toggle "nr9_iam_wildcard_policy" scopes both down to a narrow,
+# harmless read-only statement for "hardened"/"mixed".
 
 resource "aws_iam_policy" "wildcard" {
   name        = "${var.name}-nr9-wildcard-policy"
@@ -154,8 +186,8 @@ resource "aws_iam_policy" "wildcard" {
     Statement = [
       {
         Effect   = "Allow"
-        Action   = "*"
-        Resource = "*"
+        Action   = var.fixture_compliance["nr9_iam_wildcard_policy"] ? ["s3:GetObject"] : ["*"]
+        Resource = var.fixture_compliance["nr9_iam_wildcard_policy"] ? ["arn:aws:s3:::${var.name}-nr9-wildcard-scope/*"] : ["*"]
       }
     ]
   })

@@ -43,6 +43,14 @@ _TIMEOUT_FULL_SCAN = 900
 # Scans narrowed to a single §30 area (the exceptions flow) are far cheaper.
 _TIMEOUT_SCOPED_SCAN = 300
 
+# Task #54 (Gründer-Vorgabe 27.07.2026): this file runs in ALL THREE AWS
+# scenarios (see infra/aws/variables.tf::scenario), unlike the rest of this
+# package which is fixed to "gaps" (tests/integration/conftest.py::
+# SKIP_UNLESS_GAPS_SCENARIO). Its assertions are already scenario-tolerant
+# EXCEPT the "at least one non_compliant finding" check below, which does not
+# hold in "hardened" (every supported Terraform-fixture gap is closed there).
+_SCENARIO = os.environ.get("NIS2SCAN_SCENARIO", "gaps")
+
 
 @pytest.fixture(scope="module")
 def e2e_bin() -> str:
@@ -158,8 +166,17 @@ class TestAwsCliE2EScanJourney:
         assert report["schema_version"]
         findings = report["findings"]
         assert findings, "Expected at least one finding (deployed Terraform test gaps)"
-        non_compliant = [f for f in findings if f["status"] == "non_compliant"]
-        assert non_compliant, "Expected at least one non_compliant finding from the Terraform test infrastructure"
+
+        if _SCENARIO == "hardened":
+            # Every supported Terraform-fixture gap is closed in "hardened" —
+            # "at least one non_compliant finding" is no longer guaranteed
+            # account-wide (Task #54). Assert the mirror image instead: the
+            # scan must still produce positive (COMPLIANT) evidence.
+            compliant = [f for f in findings if f["status"] == "compliant"]
+            assert compliant, "Expected at least one compliant finding in the 'hardened' scenario"
+        else:
+            non_compliant = [f for f in findings if f["status"] == "non_compliant"]
+            assert non_compliant, "Expected at least one non_compliant finding from the Terraform test infrastructure"
 
         outcomes = report["check_outcomes"]
         assert outcomes, "check_outcomes must not be empty (ADR-0007: every check must stay visible)"
