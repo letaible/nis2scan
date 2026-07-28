@@ -542,3 +542,28 @@ Verlaufsabschnitte (Batches Nr. 4–10) und der Kampagnen-Bilanz.
   Test für missgebildetes nsg.id) für den nächsten Touch vorgemerkt.
 - **Gründer-Vermerk: ERTEILT (Chat-Freigabe 28.07.2026 „Vermerk
   erteilt").** Beide Vermerke liegen vor — Merge frei.
+
+#### Review AZ-NR9-003-Enum-Falsch-Negativ-Fix (2026-07-28)
+
+- Gegenstand (Branch `fix/az-nr9-003-enum`): Der instrumentierte
+  Azure-mixed-Lauf legte die ECHTE Ursache des als konform gemeldeten
+  offenen SSH-Ports offen (die beiden vorherigen Fixes desselben Tages —
+  Timing-Wait, get()-Refetch — trafen sie nicht): azure-mgmt-network
+  liefert rule.direction/access zur Laufzeit als Enum, dessen str()
+  "SecurityRuleDirection.INBOUND" ergibt, nicht "Inbound"; der Vergleich
+  str(x).lower() == "inbound" schlug daher IMMER fehl → jede offene
+  Inbound-Regel galt als konform (Falsch-Negativ). Fix: _enum_value_lower
+  nutzt .value (mit str-Fallback). Alte Unit-Tests nutzten Strings
+  (Mock-Drift) — neuer Test mit echter Enum-Form.
+- **Zweitprüfung (legal-reviewer): FAIL → 1 Auflage → Nachprüfung PASS.**
+  Auflage (ADR-0016): die Enum-Prämisse war statisch (lokale SDK 30.2.0
+  deklariert str) nicht gestützt und musste gegen echtes Azure belegt
+  werden. Erbracht: Rohdump (Run 30342407910: dir=SecurityRuleDirection.
+  INBOUND) UND zwingender rot→grün-Beweis (Branch-Run 30345928601 grün;
+  bei plain str wäre der Fix ein No-op und der Lauf bliebe rot → Modus
+  tollens: es IST ein Enum). Helper unter beiden Objektformen korrekt und
+  None-safe. Nicht sperrende Hinweise: azure-mgmt-network-Obergrenze in
+  pyproject fehlt (CI-Version kann driften — in Task #58 mitaufgenommen);
+  gleiches str(enum)-Muster in weiteren Checks → Task #58 (Enum-Sweep).
+- **Gründer-Vermerk: ERTEILT (Chat-Freigabe 28.07.2026 „Vermerk
+  erteilt").** Beide Vermerke liegen vor — Merge frei.
