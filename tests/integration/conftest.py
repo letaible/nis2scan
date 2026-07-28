@@ -108,9 +108,14 @@ def gcp_session():
     if not project_id:
         pytest.skip("GCP_PROJECT_ID not set — skipping GCP integration tests")
 
-    import google.auth  # type: ignore[import-untyped]
+    # Use the SAME code path as the CLI/SaaS (create_gcp_session), NOT a bare
+    # google.auth.default(): the direct call here left credentials unscoped,
+    # which made the Task #57 scope fix in session.py invisible to the
+    # integration tests — the impersonated WIF credentials in CI then sent an
+    # empty scope to generateAccessToken and every compute/kms check failed
+    # with 400 INVALID_ARGUMENT (found 28.07.2026 when the session.py fix
+    # alone did not turn the run green).
+    from nis2scan.engine.models.config import ProviderConfig
+    from nis2scan.engine.providers.gcp.session import create_gcp_session
 
-    from nis2scan.engine.providers.gcp.session import GcpSession
-
-    credentials, _ = google.auth.default()
-    return GcpSession(credentials=credentials, project_ids=[project_id])
+    return create_gcp_session(ProviderConfig(enabled=True, accounts=[project_id]))

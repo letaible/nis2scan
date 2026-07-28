@@ -103,6 +103,40 @@ def _matches(finding: Finding, resource_ref: str) -> bool:
     return resource_ref in finding.resource_id
 
 
+def _dump_nsg_rules(azure_session: Any, nsg_name_ref: str) -> str:
+    """Diagnostic (28.07.2026): read the NSG both via list_all() (what the
+    check uses) and get() and stringify each inbound rule's decisive attributes.
+    Purely a test-side probe — never touched by production code paths."""
+    try:
+        from azure.mgmt.network import NetworkManagementClient
+
+        for sub_id in azure_session.subscription_ids:
+            client = azure_session.get_client(NetworkManagementClient, sub_id)
+            for nsg in client.network_security_groups.list_all():
+                if nsg_name_ref not in (nsg.id or ""):
+                    continue
+
+                def _rules_repr(rules: Any) -> str:
+                    out = []
+                    for r in rules or []:
+                        out.append(
+                            f"{r.name}[dir={r.direction},acc={r.access},"
+                            f"src={r.source_address_prefix!r},srcs={getattr(r, 'source_address_prefixes', None)!r},"
+                            f"port={r.destination_port_range!r}]"
+                        )
+                    return "[" + ", ".join(out) + "]"
+
+                rg = nsg.id.split("/resourceGroups/")[1].split("/")[0]
+                full = client.network_security_groups.get(rg, nsg.name)
+                return (
+                    f"ROHDUMP nsg={nsg.name}: list_all.security_rules={_rules_repr(nsg.security_rules)}; "
+                    f"get.security_rules={_rules_repr(full.security_rules)}"
+                )
+        return f"ROHDUMP: NSG {nsg_name_ref} in keiner Subscription per list_all gefunden"
+    except Exception as exc:  # noqa: BLE001
+        return f"ROHDUMP fehlgeschlagen: {type(exc).__name__}: {exc}"
+
+
 @pytest.mark.integration
 class TestScenarioAwareFixtureExpectations:
     """Runs every check referenced in fixture_expectations exactly once and
@@ -160,22 +194,23 @@ class TestScenarioAwareFixtureExpectations:
                         )
             elif expected == "non_compliant":
                 if not non_compliant:
-                    # Diagnostic detail (Szenario-Matrix 28.07.2026): the raw
-                    # cause is invisible from the bare "no finding" message, so
-                    # spell out what the check ACTUALLY saw — did it emit a
-                    # COMPLIANT finding for this ref (read the resource as still
-                    # hardened → gap not deployed / not yet propagated / wrong
-                    # attribute read), or did the ref not appear among the
-                    # check's findings at all (resource missing from the
-                    # listing)? This turns the next run (targeted or the weekly
-                    # cron) into a decisive diagnosis without burning one now.
                     matched_detail = [f"{f.status.value}:{f.title}" for f in matched]
                     all_refs = [f.resource_id.rsplit("/", 1)[-1] for f in findings]
+                    extra = ""
+                    # Raw-SDK dump for AZ-NR9-003 (28.07.2026): the finding-level
+                    # view only says "compliant", not WHY. Re-read the NSG the
+                    # same way the check does (list_all) AND via get(), and print
+                    # each rule's direction/access/source so we can see whether
+                    # list_all returns the open rule at all, and if so with which
+                    # attribute values — the decisive raw evidence the two prior
+                    # hypothesis-based fixes lacked.
+                    if check_id == "AZ-NR9-003":
+                        extra = "; " + _dump_nsg_rules(azure_session, resource_ref)
                     failures.append(
                         f"[{key}] erwartet non_compliant, aber {check_id} meldet kein non_compliant Finding fuer "
                         f"resource_ref={resource_ref!r} (Fehler: {error_messages_by_check_id[check_id]}; "
                         f"gematchte Findings: {matched_detail or 'KEINE'}; "
-                        f"alle {check_id}-Finding-Refs: {all_refs})"
+                        f"alle {check_id}-Finding-Refs: {all_refs}{extra})"
                     )
             else:
                 failures.append(f"[{key}] unbekannter expected-Wert {expected!r} (weder compliant noch non_compliant)")
