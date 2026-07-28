@@ -141,6 +141,78 @@ class TestCheckNsgOpenAccess:
         assert len(_maengel(result)) == 1
         assert not _compliant(result)
 
+    def _client_with_empty_list_all_rules(self) -> MagicMock:
+        """Real-world SDK object form (28.07.2026 finding): list_all() has been
+        observed to return an NSG with security_rules empty/None even though the
+        NSG has a custom open inbound rule — a per-NSG get() call returns the
+        fully materialized rule set. This is not a mock-drift scenario: both
+        objects below are the shapes the azure-mgmt-network SDK actually
+        produces (NetworkSecurityGroup with security_rules populated from
+        properties.securityRules), just from two different operations.
+        """
+        client = MagicMock()
+        client.network_security_groups.list_all.return_value = [
+            SimpleNamespace(
+                name="nsg-nc",
+                location="westeurope",
+                id=(
+                    f"/subscriptions/{SUB_ID}/resourceGroups/rg/providers/"
+                    "Microsoft.Network/networkSecurityGroups/nsg-nc"
+                ),
+                security_rules=None,
+            ),
+        ]
+        client.network_security_groups.get.return_value = SimpleNamespace(
+            name="nsg-nc",
+            location="westeurope",
+            id=(f"/subscriptions/{SUB_ID}/resourceGroups/rg/providers/Microsoft.Network/networkSecurityGroups/nsg-nc"),
+            security_rules=[
+                SimpleNamespace(
+                    name="AllowSSHAnywhere",
+                    direction="Inbound",
+                    access="Allow",
+                    source_address_prefix="*",
+                    destination_port_range="22",
+                    protocol="Tcp",
+                ),
+            ],
+        )
+        return client
+
+    def test_list_all_empty_rules_falls_back_to_get_and_finds_open_rule(self):
+        # Regression test for the 28.07.2026 false-negative: list_all() reports
+        # zero security_rules for a NSG that does have an open SSH rule. The
+        # check must re-fetch the NSG via get() and still flag it non-compliant
+        # instead of silently classifying it as compliant.
+        client = self._client_with_empty_list_all_rules()
+        session = FakeAzureSession({"NetworkManagementClient": client})
+
+        result = asyncio.run(CheckNsgOpenAccess().execute(session))
+
+        maengel = _maengel(result)
+        assert len(maengel) == 1, f"expected exactly one non-compliant finding, got: {result.findings}"
+        assert not _compliant(result)
+        client.network_security_groups.get.assert_called_once_with("rg", "nsg-nc")
+
+    def test_refetch_failure_yields_inconclusive_error_not_compliant(self):
+        # Fail-safe (ADR-0016, legal review 28.07.2026, Auflage): if list_all()
+        # returns no rules AND the defensive get() re-fetch fails, the NSG's
+        # rule state is UNKNOWN — the check must NOT fall back to a silent
+        # "compliant" verdict (which would reproduce the very false-negative
+        # this fix prevents). It must emit an InconclusiveState CheckError and
+        # produce no finding of either kind for that NSG.
+        client = self._client_with_empty_list_all_rules()
+        client.network_security_groups.get.side_effect = RuntimeError("throttled (429)")
+        session = FakeAzureSession({"NetworkManagementClient": client})
+
+        result = asyncio.run(CheckNsgOpenAccess().execute(session))
+
+        assert not _compliant(result), "must NOT declare an unverifiable NSG compliant"
+        assert not _maengel(result)
+        assert len(result.errors) == 1
+        assert result.errors[0].error_type == "InconclusiveState"
+        assert "nsg-nc" in result.errors[0].message
+
     def _client_with_plural_prefixes(self, source_prefixes: list[str]) -> MagicMock:
         client = MagicMock()
         client.network_security_groups.list_all.return_value = [

@@ -252,7 +252,47 @@ class CheckNsgOpenAccess(BaseCheck):
 
                 for nsg in nsgs:
                     open_rules = []
+                    # Robustness fix (28.07.2026): network_security_groups.list_all() has
+                    # been observed to come back with security_rules empty/unpopulated for
+                    # NSGs that do have custom inbound rules (confirmed via Terraform-fixture
+                    # instrumentation against real Azure test infrastructure -- a NSG with an
+                    # open inbound SSH rule from "*" was silently reported as "compliant").
+                    # A per-NSG get() call always returns the fully materialized rule set, so
+                    # re-fetch defensively instead of trusting list_all()'s embedded rules at
+                    # face value -- an empty result here is a false "compliant" verdict on a
+                    # security-critical check (an unnoticed open port).
                     rules = nsg.security_rules or []
+                    if not rules and nsg.id:
+                        # Fail-safe (ADR-0016, legal review 28.07.2026, Auflage): if the
+                        # re-fetch fails we must NOT silently fall back to the empty rule
+                        # list — that would reproduce the exact false "compliant" verdict
+                        # this fix exists to prevent, just via a new trigger. The NSG's
+                        # rule state is then UNKNOWN, so emit an InconclusiveState
+                        # CheckError and skip it (pattern: CheckStaleServicePrincipals /
+                        # AZ-NR6-004 / AZ-NR10-003) — no finding of either kind.
+                        try:
+                            rg_name = nsg.id.split("/resourceGroups/")[1].split("/")[0]
+                            full_nsg = network_client.network_security_groups.get(rg_name, nsg.name)
+                            rules = full_nsg.security_rules or []
+                        except Exception as refetch_exc:
+                            logger.warning(
+                                "az_nr9_003_nsg_refetch_failed",
+                                nsg_name=nsg.name,
+                                error=str(refetch_exc),
+                            )
+                            errors.append(
+                                CheckError(
+                                    check_id=self.check_id,
+                                    error_type="InconclusiveState",
+                                    message=(
+                                        f"NSG {nsg.name}: Regelsatz konnte nicht ermittelt werden "
+                                        f"(list_all lieferte keine Regeln, Nachladen fehlgeschlagen: "
+                                        f"{refetch_exc}). Offene Ports sind nicht ausschließbar."
+                                    ),
+                                    region=nsg.location or "global",
+                                )
+                            )
+                            continue
                     for rule in rules:
                         source_prefixes = getattr(rule, "source_address_prefixes", None) or []
                         is_open_source = rule.source_address_prefix in OPEN_SOURCE_PREFIXES or any(
