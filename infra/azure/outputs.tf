@@ -140,10 +140,16 @@ locals {
       hardened_supported = true
     }
     nr3_immutable_blob = {
-      check_id           = "AZ-NR3-006"
-      resource_ref       = local.subscription_ref
-      expected           = local.fixture_compliance["nr3_immutable_blob"] ? "compliant" : "non_compliant"
-      hardened_supported = true
+      check_id     = "AZ-NR3-006"
+      resource_ref = local.subscription_ref
+      # ALWAYS non_compliant (legal review 28.07.2026, Auflage 1+3): the check
+      # requires a LOCKED immutability policy since 28.07.2026, but the CI
+      # fixture deliberately deploys locked=false (a Locked policy would block
+      # terraform destroy for the whole retention period — see the module
+      # comment). The compliant path is therefore proven by unit tests against
+      # the real SDK shape, never by this integration fixture.
+      expected           = "non_compliant"
+      hardened_supported = false
     }
 
     # --- Nr. 5 Schwachstellenmanagement ---
