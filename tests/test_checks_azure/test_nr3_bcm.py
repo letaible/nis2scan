@@ -301,28 +301,96 @@ class TestCheckSiteRecovery:
 
 
 class TestCheckImmutableBlobStorage:
-    def _client(self, immutable: bool) -> MagicMock:
+    def _client_with_container(self, immutability_policy, immutable_storage_with_versioning) -> MagicMock:
         account_id = f"/subscriptions/{SUB_ID}/resourceGroups/rg-1/providers/Microsoft.Storage/storageAccounts/st1"
         client = MagicMock()
         client.storage_accounts.list.return_value = [SimpleNamespace(name="st1", id=account_id)]
         client.blob_containers.list.return_value = [
             SimpleNamespace(
-                immutability_policy=SimpleNamespace(state="Locked") if immutable else None,
-                immutable_storage_with_versioning=None,
+                immutability_policy=immutability_policy,
+                immutable_storage_with_versioning=immutable_storage_with_versioning,
             ),
         ]
         return client
 
-    def test_immutable_container_produces_positive_evidence(self):
-        session = FakeAzureSession({"StorageManagementClient": self._client(immutable=True)})
+    def test_locked_immutability_policy_produces_positive_evidence(self):
+        # Real SDK shape: ImmutabilityPolicyProperties carries the retention
+        # period AND a state. Only a LOCKED policy counts (legal review
+        # 28.07.2026, Auflage 1): an Unlocked policy is revocable and offers
+        # no safeguard in the ransomware threat model of this check.
+        client = self._client_with_container(
+            immutability_policy=SimpleNamespace(immutability_period_since_creation_in_days=365, state="Locked"),
+            immutable_storage_with_versioning=None,
+        )
+        session = FakeAzureSession({"StorageManagementClient": client})
 
         result = asyncio.run(CheckImmutableBlobStorage().execute(session))
 
         assert len(_compliant(result)) == 1
         assert not _maengel(result)
 
+    def test_unlocked_immutability_policy_is_not_compliant(self):
+        # Deliberate Locked/Unlocked decision (legal review 28.07.2026,
+        # Auflage 1+2): retention period alone does not suffice — an Unlocked
+        # policy can be shortened or deleted by a privileged attacker.
+        client = self._client_with_container(
+            immutability_policy=SimpleNamespace(immutability_period_since_creation_in_days=365, state="Unlocked"),
+            immutable_storage_with_versioning=None,
+        )
+        session = FakeAzureSession({"StorageManagementClient": client})
+
+        result = asyncio.run(CheckImmutableBlobStorage().execute(session))
+
+        assert len(_maengel(result)) == 1
+        assert not _compliant(result)
+
+    def test_versioning_immutability_enabled_produces_positive_evidence(self):
+        client = self._client_with_container(
+            immutability_policy=None,
+            immutable_storage_with_versioning=SimpleNamespace(enabled=True),
+        )
+        session = FakeAzureSession({"StorageManagementClient": client})
+
+        result = asyncio.run(CheckImmutableBlobStorage().execute(session))
+
+        assert len(_compliant(result)) == 1
+        assert not _maengel(result)
+
+    def test_versioning_immutability_disabled_object_is_not_compliant(self):
+        # False-positive regression (real-ARM-verified 27.07.2026): Azure
+        # returns immutable_storage_with_versioning as {"enabled": false} on
+        # EVERY container — a bare truthiness test declared any container
+        # compliant. The disabled object must NOT count.
+        client = self._client_with_container(
+            immutability_policy=None,
+            immutable_storage_with_versioning=SimpleNamespace(enabled=False),
+        )
+        session = FakeAzureSession({"StorageManagementClient": client})
+
+        result = asyncio.run(CheckImmutableBlobStorage().execute(session))
+
+        assert len(_maengel(result)) == 1
+        assert not _compliant(result)
+
+    def test_policy_without_retention_period_is_not_compliant(self):
+        # A policy object whose retention period is 0/None proves nothing.
+        client = self._client_with_container(
+            immutability_policy=SimpleNamespace(immutability_period_since_creation_in_days=0, state="Unlocked"),
+            immutable_storage_with_versioning=SimpleNamespace(enabled=False),
+        )
+        session = FakeAzureSession({"StorageManagementClient": client})
+
+        result = asyncio.run(CheckImmutableBlobStorage().execute(session))
+
+        assert len(_maengel(result)) == 1
+        assert not _compliant(result)
+
     def test_no_immutable_container_produces_finding(self):
-        session = FakeAzureSession({"StorageManagementClient": self._client(immutable=False)})
+        client = self._client_with_container(
+            immutability_policy=None,
+            immutable_storage_with_versioning=None,
+        )
+        session = FakeAzureSession({"StorageManagementClient": client})
 
         result = asyncio.run(CheckImmutableBlobStorage().execute(session))
 

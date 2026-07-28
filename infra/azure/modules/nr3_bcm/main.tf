@@ -71,6 +71,26 @@ resource "azurerm_storage_account" "non_compliant_lrs" {
 # im "gaps"-Zustand faelschlich compliant meldete; siehe Task #54 Endbericht).
 # "hardened"/"mixed" mit fixture_compliance["nr3_immutable_blob"]: Container +
 # Immutability-Policy werden angelegt.
+#
+# FIX (Azure-mixed-Beweislauf, Run 30297491967, 27.07.2026): dieses Fixture
+# legte vorher azurerm_storage_management_policy an — das ist eine Blob-
+# LIFECYCLE-Management-Regel (automatisches Tiering/Loeschen nach N Tagen,
+# ARM-Pfad .../storageAccounts/{n}/managementPolicies/default), NICHT die
+# Container-Immutability/WORM-Policy, die CheckImmutableBlobStorage tatsaechlich
+# liest (container.immutability_policy, ARM-Pfad .../blobServices/default/
+# containers/{n} mit einer eigenen ImmutabilityPolicy-Property). Belegt ueber
+# `terraform providers schema -json`: der azurerm-Provider hat dafuer die
+# eigene Resource azurerm_storage_container_immutability_policy — die wurde
+# hier nie verwendet. Auf UNLOCKED (locked=false) gesetzt: eine gesperrte
+# Policy verhindert `terraform destroy` fuer die Laufzeit der Aufbewahrungs-
+# frist unwiderruflich (Account/Container koennen dann nicht mehr geloescht
+# werden) — fuer eine Testinfrastruktur, die jeden CI-Lauf zerstoert wird,
+# unbrauchbar. KONSEQUENZ (Rechts-Review 28.07.2026, Auflage 1+3): Der Check
+# AZ-NR3-006 verlangt seit 28.07.2026 eine LOCKED-Policy fuer den
+# Positivnachweis — dieses Fixture kann den Compliant-Pfad daher NIE beweisen
+# und ist in fixture_expectations als hardened_supported=false mit expected=
+# non_compliant in ALLEN Szenarien gefuehrt (siehe infra/azure/outputs.tf).
+# Der Compliant-Pfad wird per Unit-Test gegen die echte SDK-Form bewiesen.
 resource "azurerm_storage_container" "immutable" {
   count                 = var.fixture_compliance["nr3_immutable_blob"] ? 1 : 0
   name                  = "immutable"
@@ -78,25 +98,9 @@ resource "azurerm_storage_container" "immutable" {
   container_access_type = "private"
 }
 
-resource "azurerm_storage_management_policy" "immutable" {
-  count              = var.fixture_compliance["nr3_immutable_blob"] ? 1 : 0
-  storage_account_id = azurerm_storage_account.compliant_grs.id
-
-  rule {
-    name    = "immutability"
-    enabled = true
-
-    filters {
-      prefix_match = ["immutable/"]
-      blob_types   = ["blockBlob"]
-    }
-
-    actions {
-      base_blob {
-        delete_after_days_since_modification_greater_than = 365
-      }
-    }
-  }
-
-  depends_on = [azurerm_storage_container.immutable]
+resource "azurerm_storage_container_immutability_policy" "immutable" {
+  count                                 = var.fixture_compliance["nr3_immutable_blob"] ? 1 : 0
+  storage_container_resource_manager_id = azurerm_storage_container.immutable[0].resource_manager_id
+  immutability_period_in_days           = 365
+  locked                                = false
 }

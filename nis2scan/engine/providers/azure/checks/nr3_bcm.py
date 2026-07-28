@@ -670,7 +670,26 @@ class CheckImmutableBlobStorage(BaseCheck):
                         containers = list(storage_client.blob_containers.list(rg_name, account.name))
                         accounts_checked += 1
                         for container in containers:
-                            if container.immutability_policy or container.immutable_storage_with_versioning:
+                            # False-positive fix (real-ARM-verified 27.07.2026):
+                            # Azure returns immutable_storage_with_versioning as
+                            # {"enabled": false} on EVERY container, configured or
+                            # not — a bare truthiness test declared any container
+                            # compliant. Both signals must prove an ACTIVE state:
+                            # a versioning-immutability explicitly enabled, or an
+                            # immutability policy with a real retention period
+                            # that is LOCKED. An Unlocked policy is revocable by
+                            # anyone with sufficient storage permissions and thus
+                            # no safeguard in the ransomware threat model this
+                            # check addresses (legal review 28.07.2026, Auflage 1
+                            # — strict variant chosen over documenting Unlocked
+                            # as sufficient).
+                            iswv = container.immutable_storage_with_versioning
+                            policy = container.immutability_policy
+                            if (iswv is not None and getattr(iswv, "enabled", False)) or (
+                                policy is not None
+                                and (getattr(policy, "immutability_period_since_creation_in_days", 0) or 0) > 0
+                                and getattr(policy, "state", "") == "Locked"
+                            ):
                                 has_immutable = True
                                 break
                         if has_immutable:
