@@ -8,6 +8,25 @@ from nis2scan.engine.models.config import ProviderConfig
 
 logger = structlog.get_logger()
 
+# Task #57 (28.07.2026): google.auth.default() must be called WITH this scope.
+# Impersonated WIF credentials (CI: external_account + service_account_
+# impersonation_url) send `scope` from self._scopes/_default_scopes verbatim
+# in the IAM Credentials generateAccessToken request body — a required field.
+# Left unset, that field is null/empty and generateAccessToken answers 400
+# INVALID_ARGUMENT ("Unable to acquire impersonated credentials"). Whether a
+# given client hits this depends on the client library, NOT on provider
+# (verified against the real google-cloud-python transport source): the
+# gapic-generated kms_v1/compute_v1 transports only scope credentials THEY
+# load themselves (credentials=None branch) — never credentials passed in
+# explicitly, as GcpSession.client()/direct construction here always does.
+# google-cloud-storage is the one exception: its base Client always re-scopes
+# any passed-in credentials via with_scopes_if_required(credentials, SCOPE).
+# Scoping once, here, means every consumer of session.credentials — gapic
+# clients, googleapiclient discovery services, storage.Client — shares one
+# already-scoped credentials object instead of relying on each client
+# library's own (inconsistent) scoping behaviour.
+GCP_DEFAULT_SCOPES = ["https://www.googleapis.com/auth/cloud-platform"]
+
 
 class GcpSession:
     """Wrapper around Google Cloud credentials with multi-project support."""
@@ -47,7 +66,7 @@ def create_gcp_session(config: ProviderConfig) -> GcpSession:
     """Create a GCP session from provider config."""
     import google.auth
 
-    credentials, default_project = google.auth.default()
+    credentials, default_project = google.auth.default(scopes=GCP_DEFAULT_SCOPES)
 
     # Get project IDs from config or use default
     project_ids = config.accounts or []
