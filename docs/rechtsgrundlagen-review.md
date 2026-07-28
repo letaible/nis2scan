@@ -525,3 +525,20 @@ Verlaufsabschnitte (Batches Nr. 4–10) und der Kampagnen-Bilanz.
   gedeckt, als künftige Verfeinerung notiert.
 - **Gründer-Vermerk: ERTEILT (Chat-Freigabe 28.07.2026 „Vermerk
   erteilt").** Beide Vermerke liegen vor — Merge frei.
+
+#### Review AZ-NR9-003-Falsch-Negativ-Fix — list_all-Refetch (2026-07-28)
+
+- Gegenstand (Branch `fix/az-nr9-003-false-negative`): Der instrumentierte
+  Azure-mixed-Szenariolauf deckte auf, dass CheckNsgOpenAccess eine NSG mit
+  offener Inbound-SSH-Regel (source "*") als KONFORM meldete — ein
+  Falsch-Negativ (übersehener offener Port). Ursache: list_all() liefert
+  security_rules teils leer; Fix lädt bei leerer Liste per get() nach.
+- **Zweitprüfung (legal-reviewer): FAIL → 1 Auflage → Nachprüfung PASS.**
+  Auflage (ADR-0016): Schlägt das Nachladen fehl, darf der Check die NSG
+  NICHT still als konform melden (das reproduziert den Falsch-Negativ) —
+  stattdessen InconclusiveState-CheckError + continue. Umgesetzt inkl.
+  Fehlerpfad-Regressionstest. Nicht sperrende Hinweise H1 (audit_evidence
+  nennt list_all als Quelle auch im get-Fall) und H2 (kein dedizierter
+  Test für missgebildetes nsg.id) für den nächsten Touch vorgemerkt.
+- **Gründer-Vermerk: ERTEILT (Chat-Freigabe 28.07.2026 „Vermerk
+  erteilt").** Beide Vermerke liegen vor — Merge frei.
