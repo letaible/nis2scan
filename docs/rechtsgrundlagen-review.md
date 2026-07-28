@@ -502,3 +502,26 @@ Verlaufsabschnitte (Batches Nr. 4–10) und der Kampagnen-Bilanz.
   cloudidentity-Endpoint + Diskriminierungstest.
 - **Gründer-Vermerk: ERTEILT (Chat-Freigabe 27.07.2026 „Vermerk
   erteilt").** Beide Vermerke liegen vor — Merge frei.
+
+#### Review AZ-NR3-006-Falsch-Positiv-Fix — Locked-Anforderung (2026-07-28)
+
+- Gegenstand (Branch `fix/az-nr3-006-false-positive`): Der Azure-mixed-
+  Szenariolauf deckte auf, dass CheckImmutableBlobStorage „konform"
+  meldete, sobald irgendein Blob-Container existierte (Azure liefert
+  immutable_storage_with_versioning immer als Objekt, auch mit
+  enabled=false; der Check prüfte nur Truthiness) — Falsch-Positiv bei
+  echten Kundenscans. Fix: Versioning-Immutability nur mit enabled=true;
+  Container-Policy nur mit Retention > 0 UND state Locked. Zugehörig:
+  Test-Fixture von der falschen Lifecycle-Ressource auf die echte
+  WORM-Policy umgestellt.
+- **Zweitprüfung (legal-reviewer): FAIL → 3 Auflagen → Nachprüfung
+  PASS.** Kernauflage: Eine Unlocked-Policy ist laut Microsoft-Primärdoku
+  widerrufbar und darf im Ransomware-Threat-Model des Checks nicht als
+  Nachweis zählen — strenge Variante (Locked erforderlich) umgesetzt,
+  inkl. Unlocked-Regressionstest und ehrlicher Fixture-Kennzeichnung
+  (hardened_supported=false, Compliant-Pfad per Unit-Test bewiesen).
+  Nicht sperrender Resthinweis: Versioning-Pfad belegt die aktivierte
+  Fähigkeit, nicht eine gesetzte Default-Retention — durch Prüfgrenzen
+  gedeckt, als künftige Verfeinerung notiert.
+- **Gründer-Vermerk: ERTEILT (Chat-Freigabe 28.07.2026 „Vermerk
+  erteilt").** Beide Vermerke liegen vor — Merge frei.
