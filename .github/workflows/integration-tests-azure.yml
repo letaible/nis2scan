@@ -140,6 +140,15 @@ jobs:
         working-directory: infra/azure
         run: terraform output -json > ../../tests/integration/az_tf_outputs.json
 
+      # ARM propagation delay (Szenario-Matrix-Fund 28.07.2026): freshly
+      # written NSG security_rules can come back EMPTY from
+      # network_security_groups.list_all() for a short window after apply,
+      # so a scan reads the just-opened rule as still-restricted and reports
+      # the NSG compliant when the mixed/gaps scenario expects non_compliant
+      # (AZ-NR9-003). Same class as the GCP Cloud-Asset-Inventory wait below.
+      - name: Wait for Azure ARM propagation
+        run: echo "Waiting 60s for ARM resource/rule propagation..." && sleep 60
+
       - name: Run Azure Integration Tests
         env:
           AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
