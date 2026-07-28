@@ -105,14 +105,15 @@ jobs:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
-      # Task #57 (WIF-Token-Ablauf, 27.-28.07.2026): auth@v2 schreibt das
-      # GitHub-OIDC-Token EINMALIG in eine Datei. Das impersonierte
-      # SA-Access-Token lebt 1h; will google.auth danach refreshen, liest es
-      # die Datei erneut — das gespeicherte GitHub-JWT ist dann laengst
-      # abgelaufen und STS antwortet mit "400 invalid argument" ("Unable to
-      # acquire impersonated credentials"). Lange Laeufe (hardened: Deploy +
-      # 51 Checks + CLI-E2E > 1h) starben deshalb reproduzierbar an den
-      # letzten Checks. Fix: Credential-Config mit URL-Quelle — google.auth
+      # KORREKTUR 28.07.2026: Diese URL-Quelle war NICHT die Ursache des
+      # "Unable to acquire impersonated credentials"-Fehlers — der lag am
+      # fehlenden Credential-Scope (behoben in nis2scan/engine/providers/gcp/
+      # session.py, Task #57). Dieser Schritt bleibt trotzdem als UNABHAENGIGE
+      # Haertung gegen ein reales, separates Problem: auth@v2 schreibt das
+      # GitHub-OIDC-Token EINMALIG in eine Datei; will google.auth nach Ablauf
+      # des 1h-Impersonation-Tokens refreshen, liest es das laengst abgelaufene
+      # GitHub-JWT und STS antwortet mit "400 invalid argument". Bei Laeufen
+      # > 1h wuerde das zuschlagen. Fix: Credential-Config mit URL-Quelle — google.auth
       # holt bei JEDEM Refresh ein FRISCHES GitHub-OIDC-Token direkt vom
       # Runner-Endpoint (ACTIONS_ID_TOKEN_REQUEST_URL, gueltig fuer die
       # gesamte Job-Laufzeit). Diese Datei ueberschreibt die von auth@v2
