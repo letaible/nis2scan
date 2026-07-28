@@ -119,9 +119,16 @@ def _dump_nsg_rules(azure_session: Any, nsg_name_ref: str) -> str:
                 def _rules_repr(rules: Any) -> str:
                     out = []
                     for r in rules or []:
+                        # type()+repr() settle the legal-review dispute (28.07.2026):
+                        # is r.direction a plain str (then str().lower() worked and
+                        # the bug is elsewhere) or an enum whose str() != .value
+                        # (then the enum fix is the real cause)?
+                        d = r.direction
                         out.append(
-                            f"{r.name}[dir={r.direction},acc={r.access},"
-                            f"src={r.source_address_prefix!r},srcs={getattr(r, 'source_address_prefixes', None)!r},"
+                            f"{r.name}[dir_type={type(d).__name__},dir_repr={d!r},"
+                            f"dir_str={str(d)!r},dir_value={getattr(d, 'value', '<none>')!r},"
+                            f"acc={r.access!r},src={r.source_address_prefix!r},"
+                            f"srcs={getattr(r, 'source_address_prefixes', None)!r},"
                             f"port={r.destination_port_range!r}]"
                         )
                     return "[" + ", ".join(out) + "]"
