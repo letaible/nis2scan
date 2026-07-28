@@ -160,9 +160,22 @@ class TestScenarioAwareFixtureExpectations:
                         )
             elif expected == "non_compliant":
                 if not non_compliant:
+                    # Diagnostic detail (Szenario-Matrix 28.07.2026): the raw
+                    # cause is invisible from the bare "no finding" message, so
+                    # spell out what the check ACTUALLY saw — did it emit a
+                    # COMPLIANT finding for this ref (read the resource as still
+                    # hardened → gap not deployed / not yet propagated / wrong
+                    # attribute read), or did the ref not appear among the
+                    # check's findings at all (resource missing from the
+                    # listing)? This turns the next run (targeted or the weekly
+                    # cron) into a decisive diagnosis without burning one now.
+                    matched_detail = [f"{f.status.value}:{f.title}" for f in matched]
+                    all_refs = [f.resource_id.rsplit("/", 1)[-1] for f in findings]
                     failures.append(
                         f"[{key}] erwartet non_compliant, aber {check_id} meldet kein non_compliant Finding fuer "
-                        f"resource_ref={resource_ref!r} (Fehler: {error_messages_by_check_id[check_id]})"
+                        f"resource_ref={resource_ref!r} (Fehler: {error_messages_by_check_id[check_id]}; "
+                        f"gematchte Findings: {matched_detail or 'KEINE'}; "
+                        f"alle {check_id}-Finding-Refs: {all_refs})"
                     )
             else:
                 failures.append(f"[{key}] unbekannter expected-Wert {expected!r} (weder compliant noch non_compliant)")
