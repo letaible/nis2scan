@@ -105,6 +105,43 @@ jobs:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
+      # Task #57 (WIF-Token-Ablauf, 27.-28.07.2026): auth@v2 schreibt das
+      # GitHub-OIDC-Token EINMALIG in eine Datei. Das impersonierte
+      # SA-Access-Token lebt 1h; will google.auth danach refreshen, liest es
+      # die Datei erneut — das gespeicherte GitHub-JWT ist dann laengst
+      # abgelaufen und STS antwortet mit "400 invalid argument" ("Unable to
+      # acquire impersonated credentials"). Lange Laeufe (hardened: Deploy +
+      # 51 Checks + CLI-E2E > 1h) starben deshalb reproduzierbar an den
+      # letzten Checks. Fix: Credential-Config mit URL-Quelle — google.auth
+      # holt bei JEDEM Refresh ein FRISCHES GitHub-OIDC-Token direkt vom
+      # Runner-Endpoint (ACTIONS_ID_TOKEN_REQUEST_URL, gueltig fuer die
+      # gesamte Job-Laufzeit). Diese Datei ueberschreibt die von auth@v2
+      # exportierte via GITHUB_ENV (letzter Schreiber gewinnt); der
+      # auth@v2-Schritt oben bleibt fuer den initialen Handshake/Fail-fast.
+      # Audience: ohne allowed_audiences am Provider erwartet GCP genau
+      # "https://iam.googleapis.com/<provider>" (infra/gcp/oidc/main.tf).
+      - name: GCP Auth refresh-sicher machen (URL-Quelle, Task #57)
+        run: |
+          AUD="https://iam.googleapis.com/${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}"
+          ENC_AUD=$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1], safe=''))" "$AUD")
+          CRED="$RUNNER_TEMP/gcp_wif_url_credentials.json"
+          cat > "$CRED" <<EOF
+          {
+            "type": "external_account",
+            "audience": "//iam.googleapis.com/${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}",
+            "subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
+            "token_url": "https://sts.googleapis.com/v1/token",
+            "credential_source": {
+              "url": "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${ENC_AUD}",
+              "headers": { "Authorization": "Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" },
+              "format": { "type": "json", "subject_token_field_name": "value" }
+            },
+            "service_account_impersonation_url": "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${{ secrets.GCP_SERVICE_ACCOUNT }}:generateAccessToken"
+          }
+          EOF
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$CRED" >> "$GITHUB_ENV"
+          echo "CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE=$CRED" >> "$GITHUB_ENV"
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
