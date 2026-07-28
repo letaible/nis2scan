@@ -141,6 +141,61 @@ class TestCheckNsgOpenAccess:
         assert len(_maengel(result)) == 1
         assert not _compliant(result)
 
+    def _client_with_enum_rule(self, source_prefix: str) -> MagicMock:
+        """Real azure-mgmt-network 30.x object shape (real-ARM-verified
+        28.07.2026): direction/access/protocol are CaseInsensitiveEnumMeta
+        enums whose str() yields "SecurityRuleDirection.INBOUND", not
+        "Inbound", while .value yields "Inbound". The old string-only fixtures
+        above hid the false-negative (mock drift) — this one reproduces the
+        real form so the enum handling stays honest."""
+
+        class _AzureEnum:
+            def __init__(self, value: str) -> None:
+                self.value = value
+
+            def __str__(self) -> str:
+                return f"SecurityRuleDirection.{self.value.upper()}"
+
+        client = MagicMock()
+        client.network_security_groups.list_all.return_value = [
+            SimpleNamespace(
+                name="nsg-nc",
+                location="westeurope",
+                id=f"/subscriptions/{SUB_ID}/resourceGroups/rg/providers/Microsoft.Network/networkSecurityGroups/nsg-nc",
+                security_rules=[
+                    SimpleNamespace(
+                        name="AllowSSHAnywhere",
+                        direction=_AzureEnum("Inbound"),
+                        access=_AzureEnum("Allow"),
+                        source_address_prefix=source_prefix,
+                        source_address_prefixes=[],
+                        destination_port_range="22",
+                        protocol=_AzureEnum("Tcp"),
+                    ),
+                ],
+            ),
+        ]
+        return client
+
+    def test_enum_valued_open_rule_is_detected_as_non_compliant(self):
+        # Regression for the 28.07.2026 false-negative: an open rule whose
+        # direction/access come back as enums (str() != .value) must still be
+        # flagged. Under the old str(...).lower() logic this returned compliant.
+        session = FakeAzureSession({"NetworkManagementClient": self._client_with_enum_rule("*")})
+
+        result = asyncio.run(CheckNsgOpenAccess().execute(session))
+
+        assert len(_maengel(result)) == 1, f"open enum rule not flagged: {result.findings}"
+        assert not _compliant(result)
+
+    def test_enum_valued_restricted_rule_is_compliant(self):
+        session = FakeAzureSession({"NetworkManagementClient": self._client_with_enum_rule("10.0.0.0/8")})
+
+        result = asyncio.run(CheckNsgOpenAccess().execute(session))
+
+        assert len(_compliant(result)) == 1
+        assert not _maengel(result)
+
     def _client_with_empty_list_all_rules(self) -> MagicMock:
         """Real-world SDK object form (28.07.2026 finding): list_all() has been
         observed to return an NSG with security_rules empty/None even though the

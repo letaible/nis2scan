@@ -27,6 +27,20 @@ OPEN_SOURCE_PREFIXES = {"*", "0.0.0.0/0", "Internet", "0.0.0.0", "<nw>/0"}
 MAX_INACTIVE_DAYS = 90
 
 
+def _enum_value_lower(value: object) -> str:
+    """Normalize an azure-mgmt enum OR plain string to a lowercase string.
+
+    False-negative fix (real-ARM-verified 28.07.2026): azure-mgmt-network 30.x
+    returns rule.direction/rule.access as CaseInsensitiveEnumMeta enums whose
+    ``str()`` yields ``"SecurityRuleDirection.INBOUND"``, NOT ``"Inbound"``. The
+    previous ``str(rule.direction).lower() == "inbound"`` therefore never matched
+    a real inbound rule — an open SSH port from "*" was silently reported as
+    compliant. Prefer the enum's ``.value`` ("Inbound"); fall back to the object
+    itself when it is already a plain string.
+    """
+    return str(getattr(value, "value", value)).lower()
+
+
 class CheckConditionalAccess(BaseCheck):
     """Check that Entra ID Conditional Access policies exist."""
 
@@ -300,16 +314,18 @@ class CheckNsgOpenAccess(BaseCheck):
                         )
                         if (
                             rule.direction
-                            and str(rule.direction).lower() == "inbound"
+                            and _enum_value_lower(rule.direction) == "inbound"
                             and rule.access
-                            and str(rule.access).lower() == "allow"
+                            and _enum_value_lower(rule.access) == "allow"
                             and is_open_source
                         ):
                             open_rules.append(
                                 {
                                     "name": rule.name,
-                                    "port": str(rule.destination_port_range),
-                                    "protocol": str(rule.protocol),
+                                    "port": str(
+                                        getattr(rule.destination_port_range, "value", rule.destination_port_range)
+                                    ),
+                                    "protocol": str(getattr(rule.protocol, "value", rule.protocol)),
                                 }
                             )
 
