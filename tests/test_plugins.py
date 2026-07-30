@@ -6,7 +6,19 @@ import types
 import pytest
 import typer
 
+from nis2scan import __version__
 from nis2scan.plugins import PLUGIN_GROUP, PluginError, load_plugins
+
+
+def _current_minor_range() -> str:
+    """The specifier a real plugin would pin for THIS nis2scan (ADR-0019).
+
+    Derived from __version__ rather than hardcoded: a literal range silently
+    turns the compatibility test into a failing one on the next minor bump,
+    which is exactly what happened when 0.1.6 became 0.2.0.
+    """
+    major, minor, *_ = __version__.split(".")
+    return f">={major}.{minor},<{major}.{int(minor) + 1}"
 
 
 def _install_fake_plugin(monkeypatch: pytest.MonkeyPatch, module_name: str, **attrs) -> None:
@@ -37,7 +49,7 @@ def test_compatible_plugin_registers_exporters_and_commands(monkeypatch: pytest.
         ctx.report_exporters["pdf"] = lambda result, output_dir, profile: output_dir / "report.pdf"
         ctx.cli_app.command("remediate")(lambda: None)
 
-    _install_fake_plugin(monkeypatch, "fake_plugin_ok", NIS2SCAN_REQUIRES=">=0.1,<0.2", register=register)
+    _install_fake_plugin(monkeypatch, "fake_plugin_ok", NIS2SCAN_REQUIRES=_current_minor_range(), register=register)
 
     app = typer.Typer()
     ctx = load_plugins(app)

@@ -611,3 +611,46 @@ Verlaufsabschnitte (Batches Nr. 4–10) und der Kampagnen-Bilanz.
   Feststellung stützt sich auf die strukturelle Verifikation.
 - **Gründer-Vermerk: ERTEILT (Chat-Freigabe 30.07.2026 „Vermerk
   erteilt").** Beide Vermerke liegen vor — Merge frei.
+
+#### Review Offenlegungstext 0.2.0 — Falsch-Negative in 0.1.0–0.1.6 (2026-07-30)
+
+- Gegenstand: der Abschnitt „Sicherheit" im Release-Block 0.2.0 des
+  CHANGELOG. Kein Reporttext der Software, sondern öffentliche
+  Nutzer-Kommunikation darüber, dass zwei Azure-Checks in ALLEN bisher
+  veröffentlichten Versionen (0.1.0–0.1.6, gegen die Tags verifiziert)
+  einen unsicheren Zustand als konform gemeldet haben. Wegen der Aussagen
+  zur Belastbarkeit früherer Nachweise wie ein Gate-Gegenstand behandelt.
+- **Zweitprüfung (legal-reviewer): FAIL (2 Auflagen) → FAIL (1 Auflage)
+  → FAIL (1 Auflage) → PASS.** Drei Runden, jede mit einem echten Fund:
+  1. Die Handlungsempfehlung war auf Nachweis-Nutzer konditioniert. Da
+     AZ-NR9-003 offene eingehende Regeln betrifft, muss sie für ALLE
+     Azure-Nutzer gelten — plus Hinweis, dass bereits exportierte Reports
+     mitbetroffen sind.
+  2. Die Bezugsgröße bei AZ-NR3-006 war zu klein angesetzt: Das
+     Falsch-Konform-Urteil galt pro SUBSCRIPTION (Break aus beiden
+     Schleifen, `resource_id=/subscriptions/{sub_id}`), nicht pro
+     Speicherkonto. Eigenständig per `git show v0.1.6` gegengeprüft.
+  3. Der Reviewer kassierte seinen EIGENEN Textvorschlag aus Runde 1:
+     „tatsächlich erreichbare eingehende Netzwerkregeln" behauptet reale
+     Erreichbarkeit, die ein read-only-Konfigurationscheck nicht
+     feststellt (keine Public-IP-Zuordnung, keine effektiven Regeln über
+     mehrere NSG-Ebenen, kein lauschender Dienst). Ersetzt durch
+     „möglicherweise real exponierte Systeme".
+- **Zusatzfund außerhalb des Sicherheitsabschnitts:** Der auf Anregung
+  des Reviewers ergänzte Abschnitt „Bekannte Einschränkungen" zu
+  GCP-NR3-003 enthielt eine unbelegte Kausalbehauptung von mir
+  („`retention_policy` gibt es in google-cloud-storage 3.x nicht mehr").
+  Ich hatte nur verifiziert, dass das Attribut HEUTE fehlt, nie, dass es
+  je existierte. Gegenprobe an der Primärquelle (googleapis/python-storage,
+  bucket.py in v1.44.0, v2.10.0, v2.18.2): kein `retention_policy` in
+  irgendeiner Version. Der Check hat also nie funktioniert und gehört zur
+  Klasse der nie existenten SDK-Aufrufe, nicht zur SDK-Drift. Text durch
+  den geprüften Wortlaut ersetzt, Task #60 entsprechend korrigiert.
+- **Lerneffekt:** Zwei der vier Befunde dieser Runde waren unbelegte
+  Kausal- bzw. Reichweitenbehauptungen von mir, die plausibel klangen und
+  die ich nicht gegengeprüft hatte. Bei Offenlegungstexten gilt derselbe
+  Fail-safe-Maßstab wie bei Checks — in BEIDE Richtungen: weder
+  verharmlosen noch überzeichnen.
+- **Gründer-Vermerk: ERTEILT (Chat-Freigabe 30.07.2026, Entscheidung
+  „Advisory veröffentlichen" samt zugrunde liegendem Offenlegungstext).**
+  Beide Vermerke liegen vor.

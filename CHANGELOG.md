@@ -5,10 +5,45 @@ orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/).
 Die vollständige Commit-Historie und die Release-Artefakte (Wheels, sdists)
 stehen in den [GitHub Releases](https://github.com/letaible/nis2scan/releases).
 
-## Unveröffentlicht
+## 0.2.0 - 2026-07-30
 
 ### Sicherheit
 
+- **Zwei Azure-Checks meldeten einen unsicheren Zustand als konform.
+  Betroffen sind alle bisher veröffentlichten Versionen (0.1.0–0.1.6).
+  Alle Azure-Nutzerinnen und -Nutzer sollten nach dem Update zeitnah
+  erneut scannen** — unabhängig davon, ob Ergebnisse für Nachweise
+  verwendet wurden, denn AZ-NR9-003 betrifft Netzwerkregeln, die
+  eingehende Zugriffe aus dem Internet zulassen, also möglicherweise real
+  exponierte Systeme und nicht nur die Nachweisführung. Wer mit früheren
+  Ergebnissen Nachweise geführt hat: Ein zuvor erteiltes „bestanden" ist
+  für diese beiden Prüfpunkte nicht belastbar, auch in bereits
+  exportierten Reports. Beide Fehler wurden erst durch Scans gegen echte
+  Azure-Umgebungen sichtbar; Unit-Tests bildeten die tatsächliche Form der
+  SDK-Antworten nicht ab.
+  - **AZ-NR9-003 (Netzwerksicherheitsgruppen):** Eine eingehende
+    „Allow"-Regel mit Quelle `*` wurde als konform gemeldet, statt als
+    offener Port. Ursache: azure-mgmt-network liefert `direction` und
+    `access` zur Laufzeit als Enum, dessen `str()` die qualifizierte Form
+    (`SecurityRuleDirection.INBOUND`) ergibt — der Vergleich gegen
+    `"inbound"` konnte deshalb nie zutreffen, die Erkennung lief faktisch
+    nie an. Belegt durch Rohdaten aus einem echten Scan.
+  - **AZ-NR3-006 (unveränderliche Sicherungen):** Eine Subscription galt
+    als ransomware-geschützt, sobald in irgendeinem Speicherkonto
+    überhaupt ein Blob-Container existierte. Azure liefert das Feld für
+    Versionierungs-Unveränderlichkeit immer als Objekt, auch wenn sie
+    abgeschaltet ist; geprüft wurde nur dessen Vorhandensein. Jetzt zählt
+    nur noch aktive Unveränderlichkeit (`enabled=true` bzw. eine gesperrte
+    Richtlinie mit Aufbewahrungsdauer).
+- Dieselbe Fehlerklasse (SDK-Wert per `str()` in Text verwandelt, dann
+  verglichen) wurde anschließend systematisch über alle Azure- und
+  GCP-Checks gesucht. GCP war durchgängig sauber. In Azure wurden sechs
+  weitere Stellen abgesichert, darunter ein noch nicht ausgelöster, aber
+  gleichartiger Pfad in AZ-NR8-006 (Application Gateway auf TLS 1.0 wäre
+  bei künftigen SDK-Versionen als konform durchgegangen). Alle Vergleiche
+  dieser Art laufen jetzt über einen gemeinsamen Helfer, der beide
+  Darstellungsformen korrekt behandelt, mit Regressionstests in der echten
+  SDK-Objektform.
 - Pseudonymisierung (Extern-Profil): 15 Lücken geschlossen, bei denen
   Ressourcen- oder Kontonamen aus Azure-/GCP-Sammel-Findings roh im
   Beschreibungstext des externen Reports erscheinen konnten (AWS war nicht
@@ -55,6 +90,17 @@ stehen in den [GitHub Releases](https://github.com/letaible/nis2scan/releases).
   und GCP-Integrationsläufe als Release-Gate, bevor auf PyPI veröffentlicht
   wird. Für kritische Hotfixes gibt es einen Notfall-Ausstieg über einen
   manuellen Workflow-Start (mit Bestätigung), der das Gate überspringt.
+
+### Bekannte Einschränkungen
+
+- GCP-NR3-003 (Aufbewahrungsrichtlinien für GCS-Buckets) liefert kein
+  Urteil, sondern einen sichtbaren Fehler, sobald das Projekt mindestens
+  einen Bucket enthält: Der Check liest ein Attribut `retention_policy`,
+  das die google-cloud-storage-Bibliothek nicht bereitstellt (sie bildet
+  die Aufbewahrungsrichtlinie über `retention_period` und verwandte Felder
+  ab). Das betrifft alle bisherigen Versionen; der Prüfpunkt wurde dadurch
+  nie bewertet, aber auch nie fälschlich bestätigt. Die Umstellung auf die
+  tatsächliche Storage-API folgt in einer der nächsten Versionen.
 
 ## 0.1.6 - 2026-07-24
 
