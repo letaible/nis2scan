@@ -288,14 +288,22 @@ Features brauchen Abdeckung auf JEDER passenden Ebene, nicht nur Unit.
 
 ### Release (read BEFORE tagging a minor)
 
-- **A minor bump is a TWO-REPO operation (ADR-0019).** `nis2scan-premium`
-  pins a compatible minor range in two places — `NIS2SCAN_REQUIRES` in
-  `nis2scan_premium/plugin.py` and the `nis2scan>=x.y,<x.z` dependency in
-  its `pyproject.toml`. Raise BOTH and tag premium FIRST, then tag
-  nis2scan. Skip it and `nis2scan/plugins.py` rejects the premium package
-  with a German error at EVERY Professional customer. Existing installs
-  are safe either way: a one-sided upgrade hits a resolver conflict, not
-  a silent break.
+- **A minor bump is a TWO-REPO operation (ADR-0019), and the order has two
+  distinct halves.** `nis2scan-premium` pins a compatible minor range in
+  two places — `NIS2SCAN_REQUIRES` in `nis2scan_premium/plugin.py` and the
+  `nis2scan>=x.y,<x.z` dependency in its `pyproject.toml`. Correct sequence:
+  1. push **nis2scan** main with the new `__version__`,
+  2. push **premium** main with both raised pins,
+  3. tag **premium**,
+  4. tag **nis2scan**.
+  Push nis2scan first because premium's CI checks out `letaible/nis2scan`
+  main and installs it editable — pushing premium first makes its own CI
+  fail with `ResolutionImpossible` (happened 30.07.2026, run 30575198677).
+  Tag premium before nis2scan so a compatible premium exists the moment
+  nis2scan lands on PyPI. Skip the premium bump entirely and
+  `nis2scan/plugins.py` rejects the plugin with a German error at EVERY
+  Professional customer. Existing installs stay safe either way: a
+  one-sided upgrade hits a resolver conflict, not a silent break.
 - Version is single-sourced in `nis2scan/__init__.py` (hatch dynamic).
   Bump ONLY there.
 - Tests that hardcode a version range break on every bump. `tests/
