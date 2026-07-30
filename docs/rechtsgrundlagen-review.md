@@ -654,3 +654,48 @@ Verlaufsabschnitte (Batches Nr. 4–10) und der Kampagnen-Bilanz.
 - **Gründer-Vermerk: ERTEILT (Chat-Freigabe 30.07.2026, Entscheidung
   „Advisory veröffentlichen" samt zugrunde liegendem Offenlegungstext).**
   Beide Vermerke liegen vor.
+
+#### Review AZ-NR1-001/AZ-NR5-001 — PricingList-Formfix (2026-07-31)
+
+- Gegenstand (Branch `fix/pricings-sdk-shape`): Beide Checks lasen die
+  Antwort von `pricings.list()` mit `list(...)`. In azure-mgmt-security 6.x
+  ist das ein Wrapper-Modell (`PricingList`) ohne `__iter__` — der Aufruf
+  warf `TypeError`, beide Checks lieferten bei JEDEM echten Kundenscan kein
+  Urteil, sondern einen CheckError. Betroffen war das bereits
+  veröffentlichte 0.2.0.
+- **Ursache hinter der Ursache:** Die Entwicklungsumgebung hatte
+  azure-mgmt-security 7.0.0 installiert, während `pyproject.toml:42` auf
+  `<7.0.0` deckelt. Der Code war also ausschließlich gegen eine Version
+  geprüft, die Kunden per Constraint ausgeschlossen bekommen. Die
+  Unit-Tests blieben grün, weil ihre Fixtures eine Liste zurückgaben statt
+  der echten Antwortform (Mock-Drift). Gefunden wurde es erst durch eine
+  Frischinstallation von PyPI mit anschließendem Scan gegen echtes Azure.
+- Fix: Helfer `sdk_list()` in `azure/sdk_values.py`, korrekt für Wrapper und
+  Pager. Bewusst nicht fail-soft — eine unerwartete Form wirft, statt `[]`
+  zu liefern, weil AZ-NR5-001 eine leere Liste als „Defender for Servers
+  nicht aktiviert" liest und aus einem Lesefehler sonst einen nie
+  gemessenen Mangel erzeugen würde (ADR-0016).
+- **Zweitprüfung (legal-reviewer): PASS in der ersten Runde**, mit
+  ungewöhnlich dichter Eigenverifikation: Textinvarianz per Diff gegen den
+  veröffentlichten Stand auf GitHub belegt (alle Finding-Texte,
+  `pruefgrenzen`, `remediation`, `audit_evidence` zeichengleich); der
+  Kontrollfluss beider Checks selbst nachgelesen (bestätigt: bei
+  AZ-NR1-001 verhindert der `pricings and`-Guard einen falschen
+  Positivnachweis bei leerer Liste); `ItemPaged` am installierten
+  azure-core geprüft (kein `value`-Attribut, die Unterscheidung per
+  `hasattr` ist also tragfähig); und der Vollständigkeits-Sweep über alle
+  weiteren `list(...)`-Aufrufe auf Azure-SDK-Antworten gegen die
+  SDK-Quelle geführt — `security_contacts.list`, `secure_scores.list`,
+  `diagnostic_settings.list`, `classic_administrators.list`,
+  `server_vulnerability_assessments.list_by_server` liefern unter den
+  geltenden Pins alle `ItemPaged` und sind damit sicher.
+- Zwei nicht sperrende Empfehlungen umgesetzt (Commit f59f6ee): (a)
+  `value=None` wirft jetzt, weil `PricingList` das Feld als Pflichtfeld
+  deklariert — ein None ist eine verletzte API-Zusage, keine leere Antwort;
+  (b) Prämissen-Guard `assert not hasattr(response, "__iter__")` auch in
+  den Check-Testdateien, damit eine spätere „Vereinfachung" der Fixture
+  auffällt statt still den Test zu entwerten.
+- Beleg gegen die Realität: Lauf gegen echtes Azure mit der
+  kundengleichen SDK-Version 6.0.0 — beide Checks liefern `errors=0` und
+  ein Urteil statt eines Fehlers. Gates: 747 Tests, ruff, mypy grün.
+- **Gründer-Vermerk: AUSSTEHEND.** Kein Merge, bis er vorliegt.
