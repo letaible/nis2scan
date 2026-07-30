@@ -9,8 +9,11 @@ which arrives as ``SkuName.PREMIUM``.
 
 That difference is invisible to ``==`` comparisons (azure enums are
 ``(str, Enum)`` mixins, so ``SkuName.PREMIUM == "Premium"`` holds), but it is
-FATAL as soon as the value is wrapped in ``str()`` first: on Python 3.11+
-``str(SkuName.PREMIUM)`` yields ``"SkuName.PREMIUM"``, not ``"Premium"``.
+FATAL as soon as the value is wrapped in ``str()`` first: ``str()`` on a
+``(str, Enum)`` member has ALWAYS yielded the qualified ``"SkuName.PREMIUM"``
+rather than ``"Premium"`` — this is not a Python 3.11 regression (3.11 only
+changed ``format()``/f-strings), so the risk is older and broader than a
+single interpreter upgrade.
 Exactly that turned AZ-NR9-003 into a false negative — an open inbound port
 was reported as compliant because ``str(rule.direction).lower()`` never
 equalled ``"inbound"``.

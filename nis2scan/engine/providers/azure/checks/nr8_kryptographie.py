@@ -274,7 +274,7 @@ class CheckSqlTde(BaseCheck):
                                         resource_type="Microsoft.Sql/servers/databases",
                                         account_id=sub_id,
                                         current_state={
-                                            "tde_state": str(tde.state),
+                                            "tde_state": enum_value(tde.state),
                                             # server.name is interpolated into the
                                             # description above; resource_id's tail is
                                             # only the database name. Suffix key
@@ -283,7 +283,9 @@ class CheckSqlTde(BaseCheck):
                                             "server_name": server.name,
                                         },
                                         expected_state="TDE aktiviert für alle Datenbanken",
-                                        audit_evidence=f"transparent_data_encryptions.get(): state={tde.state}",
+                                        audit_evidence=(
+                                            f"transparent_data_encryptions.get(): state={enum_value(tde.state)}"
+                                        ),
                                         iso27001_control="A.8.24 Verwendung von Kryptographie",
                                     )
                                 )
@@ -307,7 +309,7 @@ class CheckSqlTde(BaseCheck):
                                         resource_type="Microsoft.Sql/servers/databases",
                                         account_id=sub_id,
                                         current_state={
-                                            "tde_state": str(tde.state),
+                                            "tde_state": enum_value(tde.state),
                                             # server.name (description) and rg_name
                                             # (remediation az-CLI command) are both
                                             # freestanding tokens, not covered by
@@ -324,7 +326,9 @@ class CheckSqlTde(BaseCheck):
                                             f"--database {db.name} --status Enabled"
                                         ),
                                         remediation_effort="LOW",
-                                        audit_evidence=f"transparent_data_encryptions.get(): state={tde.state}",
+                                        audit_evidence=(
+                                            f"transparent_data_encryptions.get(): state={enum_value(tde.state)}"
+                                        ),
                                     )
                                 )
                             else:
