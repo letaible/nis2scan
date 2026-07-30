@@ -59,7 +59,15 @@ def sdk_list(response: Any) -> list[Any]:
     (ADR-0016). A raised error becomes a visible CheckError instead.
     """
     if hasattr(response, "value"):
-        # Wrapper model (PricingList & friends). ``value`` may legitimately be
-        # None for an empty result set; that is a real answer, not a failure.
-        return list(response.value or [])
+        # Wrapper model (PricingList & friends). An empty result set comes back
+        # as ``{"value": []}`` and is a real answer. ``value=None`` is NOT: the
+        # model declares the field required, so None means the response broke
+        # its own contract — surface that instead of guessing "nothing found"
+        # (ADR-0016; legal review 31.07.2026, recommendation a).
+        if response.value is None:
+            raise ValueError(
+                f"{type(response).__name__}.value ist None — die Antwort verletzt ihren eigenen "
+                "Vertrag; ein leeres Ergebnis käme als leere Liste zurück."
+            )
+        return list(response.value)
     return list(response)  # pager; raises TypeError on any other shape

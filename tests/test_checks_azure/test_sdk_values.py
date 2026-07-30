@@ -71,11 +71,18 @@ def test_wrapper_model_yields_its_items():
     assert sdk_list(wrapper) == ["a", "b"]
 
 
-def test_wrapper_with_empty_value_is_an_answer_not_a_failure():
+def test_wrapper_with_empty_list_is_an_answer_not_a_failure():
     # An empty result set is a real answer from Azure. It must NOT raise —
     # the caller decides what "no plans" means.
     assert sdk_list(_PricingList([])) == []
-    assert sdk_list(_PricingList(None)) == []
+
+
+def test_wrapper_with_value_none_fails_loudly():
+    # PricingList declares `value` as required, so None is a broken response,
+    # not an empty one. Reading it as "nothing found" would let AZ-NR5-001
+    # report a defect it never measured (ADR-0016).
+    with pytest.raises(ValueError, match="verletzt ihren eigenen Vertrag"):
+        sdk_list(_PricingList(None))
 
 
 def test_pager_or_plain_iterable_passes_through():

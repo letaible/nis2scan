@@ -47,9 +47,11 @@ class TestCheckDefenderVulnAssessment:
         # out entirely — no verdict at all. Worse, an empty read lands in the
         # defect branch, so a silent fallback would invent a finding.
         client = MagicMock()
-        client.pricings.list.return_value = _PricingList(
-            [SimpleNamespace(name="VirtualMachines", pricing_tier="Standard")]
-        )
+        response = _PricingList([SimpleNamespace(name="VirtualMachines", pricing_tier="Standard")])
+        # Prämissen-Guard: Wird die Fixture je zu einer Liste "vereinfacht",
+        # prüft dieser Test nichts mehr — dann soll er es sagen.
+        assert not hasattr(response, "__iter__")
+        client.pricings.list.return_value = response
         session = FakeAzureSession({"SecurityCenter": client})
 
         result = asyncio.run(CheckDefenderVulnAssessment().execute(session))

@@ -43,12 +43,16 @@ class TestCheckDefenderForCloud:
         # Regression (30.07.2026): with the real SDK shape the check errored
         # out entirely and delivered no verdict for §30 Nr. 1.
         client = MagicMock()
-        client.pricings.list.return_value = _PricingList(
+        response = _PricingList(
             [
                 SimpleNamespace(name="VirtualMachines", pricing_tier="Standard"),
                 SimpleNamespace(name="StorageAccounts", pricing_tier="Free"),
             ]
         )
+        # Prämissen-Guard: Wird die Fixture je zu einer Liste "vereinfacht",
+        # prüft dieser Test nichts mehr — dann soll er es sagen.
+        assert not hasattr(response, "__iter__")
+        client.pricings.list.return_value = response
         session = FakeAzureSession({"SecurityCenter": client})
 
         result = asyncio.run(CheckDefenderForCloud().execute(session))
