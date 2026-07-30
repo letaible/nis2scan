@@ -2,6 +2,7 @@
 
 import asyncio
 from datetime import UTC, datetime, timedelta
+from enum import Enum
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -359,6 +360,46 @@ class TestCheckStoragePublicAccess:
             ),
         ]
         return client
+
+    def _client_with_enum_values(self, public: bool) -> MagicMock:
+        """Real (str, Enum)-mixin shape (30.07.2026 hardening): str() yields
+        "PublicNetworkAccess.ENABLED", .value yields "Enabled". Newer Azure
+        SDKs already return such members (proven for containerregistry), so a
+        str()-based comparison would flip this verdict on the next upgrade."""
+
+        # (str, Enum) on purpose, NOT StrEnum: StrEnum's str() returns the
+        # value and would not reproduce the real trap.
+        class _AzureStrEnum(str, Enum):  # noqa: UP042
+            ENABLED = "Enabled"
+            DISABLED = "Disabled"
+            ALLOW = "Allow"
+            DENY = "Deny"
+
+        client = MagicMock()
+        client.storage_accounts.list.return_value = [
+            SimpleNamespace(
+                name="st1",
+                public_network_access=_AzureStrEnum.ENABLED if public else _AzureStrEnum.DISABLED,
+                network_rule_set=SimpleNamespace(default_action=_AzureStrEnum.ALLOW if public else _AzureStrEnum.DENY),
+            ),
+        ]
+        return client
+
+    def test_enum_valued_public_account_is_detected(self):
+        session = FakeAzureSession({"StorageManagementClient": self._client_with_enum_values(public=True)})
+
+        result = asyncio.run(CheckStoragePublicAccess().execute(session))
+
+        assert len(_maengel(result)) == 1, f"public account with enum values not flagged: {result.findings}"
+        assert not _compliant(result)
+
+    def test_enum_valued_private_account_stays_compliant(self):
+        session = FakeAzureSession({"StorageManagementClient": self._client_with_enum_values(public=False)})
+
+        result = asyncio.run(CheckStoragePublicAccess().execute(session))
+
+        assert len(_compliant(result)) == 1
+        assert not _maengel(result)
 
     def test_private_account_produces_positive_evidence(self):
         session = FakeAzureSession({"StorageManagementClient": self._client(public=False)})

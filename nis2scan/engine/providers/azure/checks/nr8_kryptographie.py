@@ -11,6 +11,7 @@ import structlog
 from nis2scan.engine.evidence import compliant_finding
 from nis2scan.engine.models.check import BaseCheck, CheckError, CheckResult
 from nis2scan.engine.models.finding import CloudProvider, Finding, Severity
+from nis2scan.engine.providers.azure.sdk_values import enum_value, enum_value_lower
 
 logger = structlog.get_logger()
 
@@ -259,7 +260,7 @@ class CheckSqlTde(BaseCheck):
                             continue
                         try:
                             tde = sql_client.transparent_data_encryptions.get(rg_name, server.name, db.name, "current")
-                            if tde.state and str(tde.state).lower() == "enabled":
+                            if tde.state and enum_value_lower(tde.state) == "enabled":
                                 findings.append(
                                     compliant_finding(
                                         self,
@@ -286,7 +287,7 @@ class CheckSqlTde(BaseCheck):
                                         iso27001_control="A.8.24 Verwendung von Kryptographie",
                                     )
                                 )
-                            elif tde.state and str(tde.state).lower() != "enabled":
+                            elif tde.state and enum_value_lower(tde.state) != "enabled":
                                 findings.append(
                                     Finding(
                                         check_id=self.check_id,
@@ -753,8 +754,10 @@ class CheckAppGatewayTls(BaseCheck):
                         continue
 
                     min_version = ssl_policy.min_protocol_version
-                    if not min_version and str(getattr(ssl_policy, "policy_type", "")) == "Predefined":
-                        min_version = self.PREDEFINED_POLICY_MIN_TLS.get(str(getattr(ssl_policy, "policy_name", "")))
+                    if not min_version and enum_value(getattr(ssl_policy, "policy_type", "")) == "Predefined":
+                        min_version = self.PREDEFINED_POLICY_MIN_TLS.get(
+                            enum_value(getattr(ssl_policy, "policy_name", ""))
+                        )
 
                     if not min_version:
                         errors.append(
