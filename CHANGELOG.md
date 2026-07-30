@@ -5,6 +5,29 @@ orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/).
 Die vollständige Commit-Historie und die Release-Artefakte (Wheels, sdists)
 stehen in den [GitHub Releases](https://github.com/letaible/nis2scan/releases).
 
+## 0.2.1 - 2026-07-31
+
+### Behoben
+
+- **Zwei Azure-Prüfungen lieferten in 0.2.0 kein Ergebnis, sondern einen
+  Fehler.** AZ-NR1-001 (Defender-Pläne, §30 Nr. 1) und AZ-NR5-001
+  (Schwachstellenbewertung für VMs, §30 Nr. 5) endeten bei jedem echten Scan
+  mit `'PricingList' object is not iterable`. Ursache: Der Code erwartete,
+  dass diese Abfrage etwas Durchlaufbares zurückgibt. Das Azure-SDK liefert
+  in der Fassung, die eine frische Installation auflöst, stattdessen ein
+  Hüllobjekt, das seine Einträge in einem Feld trägt. Beide Prüfungen
+  liefern jetzt wieder ein Urteil. Es wurde nie etwas fälschlich als
+  konform gemeldet; der Fehler war sichtbar.
+  Wer 0.2.0 im Einsatz hatte, sollte für diese beiden Prüfpunkte erneut
+  scannen.
+
+### Bekannte Einschränkungen
+
+- GCP-NR3-003 (Aufbewahrungsrichtlinien für GCS-Buckets) liefert weiterhin
+  kein Urteil, sondern einen sichtbaren Fehler, sobald das Projekt
+  mindestens einen Bucket enthält — unverändert gegenüber 0.2.0, siehe
+  dort. Auch hier gilt: sichtbar fehlschlagend, nie fälschlich bestätigt.
+
 ## 0.2.0 - 2026-07-30
 
 ### Sicherheit
