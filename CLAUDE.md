@@ -352,6 +352,16 @@ Features brauchen Abdeckung auf JEDER passenden Ebene, nicht nur Unit.
 - `gcloud storage` (not `gsutil`) for GCS operations in CI
 
 ### Terraform
+- **Provider constraints MUST have an upper bound (`~> MAJOR.MINOR`).** The
+  `.terraform.lock.hcl` files are gitignored, so CI resolves the newest
+  matching provider on EVERY `terraform init` — a local lockfile proves
+  nothing about CI. On 30.07.2026 `hashicorp/azurerm` 5.0.0 broke the
+  v0.2.0 release gate with zero code changes. Verify what CI actually
+  installed with `gh api repos/letaible/nis2scan/actions/jobs/<id>/logs |
+  grep "Installing hashicorp/"`, never by reading a local lockfile.
+- Raising a provider major is its own task: read the migration guide, bump
+  the constraint, then run the integration workflow via `workflow_dispatch`.
+  Never discover a provider break through a release tag.
 - Test infrastructure uses random suffix to avoid naming conflicts between concurrent runs
 - All resources tagged/labeled with `project=nis2scan` + `managed-by=terraform`
 - `force_destroy = true` on all GCS buckets and S3 buckets
