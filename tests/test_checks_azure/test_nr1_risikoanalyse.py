@@ -26,7 +26,38 @@ def _maengel(result):
     return [f for f in result.findings if f.status == FindingStatus.NON_COMPLIANT]
 
 
+class _PricingList:
+    """azure-mgmt-security 6.x returns this wrapper, not an iterable pager.
+
+    No ``__iter__`` on purpose: that is what made ``list(pricings.list())``
+    raise for every user of 0.2.0 while the list-based fixtures below stayed
+    green. Keep the shape, or this regression can return unnoticed.
+    """
+
+    def __init__(self, value):
+        self.value = value
+
+
 class TestCheckDefenderForCloud:
+    def test_wrapper_model_response_is_evaluated_not_errored(self):
+        # Regression (30.07.2026): with the real SDK shape the check errored
+        # out entirely and delivered no verdict for §30 Nr. 1.
+        client = MagicMock()
+        client.pricings.list.return_value = _PricingList(
+            [
+                SimpleNamespace(name="VirtualMachines", pricing_tier="Standard"),
+                SimpleNamespace(name="StorageAccounts", pricing_tier="Free"),
+            ]
+        )
+        session = FakeAzureSession({"SecurityCenter": client})
+
+        result = asyncio.run(CheckDefenderForCloud().execute(session))
+
+        assert not result.errors, f"Check darf nicht fehlschlagen: {[e.message for e in result.errors]}"
+        maengel = _maengel(result)
+        assert len(maengel) == 1
+        assert "StorageAccounts" in maengel[0].current_state["free_tier_plans"]
+
     def test_standard_tier_produces_positive_evidence(self):
         client = MagicMock()
         client.pricings.list.return_value = [
