@@ -698,4 +698,5 @@ Verlaufsabschnitte (Batches Nr. 4–10) und der Kampagnen-Bilanz.
 - Beleg gegen die Realität: Lauf gegen echtes Azure mit der
   kundengleichen SDK-Version 6.0.0 — beide Checks liefern `errors=0` und
   ein Urteil statt eines Fehlers. Gates: 747 Tests, ruff, mypy grün.
-- **Gründer-Vermerk: AUSSTEHEND.** Kein Merge, bis er vorliegt.
+- **Gründer-Vermerk: ERTEILT (Chat-Freigabe 31.07.2026 „Vermerk
+  erteilt").** Beide Vermerke liegen vor — Merge frei.
