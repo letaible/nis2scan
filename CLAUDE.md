@@ -286,6 +286,30 @@ Features brauchen Abdeckung auf JEDER passenden Ebene, nicht nur Unit.
 
 ## Known Pitfalls & Constraints
 
+### Release (read BEFORE tagging a minor)
+
+- **A minor bump is a TWO-REPO operation (ADR-0019).** `nis2scan-premium`
+  pins a compatible minor range in two places — `NIS2SCAN_REQUIRES` in
+  `nis2scan_premium/plugin.py` and the `nis2scan>=x.y,<x.z` dependency in
+  its `pyproject.toml`. Raise BOTH and tag premium FIRST, then tag
+  nis2scan. Skip it and `nis2scan/plugins.py` rejects the premium package
+  with a German error at EVERY Professional customer. Existing installs
+  are safe either way: a one-sided upgrade hits a resolver conflict, not
+  a silent break.
+- Version is single-sourced in `nis2scan/__init__.py` (hatch dynamic).
+  Bump ONLY there.
+- Tests that hardcode a version range break on every bump. `tests/
+  test_plugins.py` derives the compatible range from `__version__` for
+  exactly that reason — keep it that way, and never write a literal
+  `">=0.1,<0.2"` into a test.
+- Tagging `v*` runs the AWS, Azure and GCP integration workflows as a
+  release gate before PyPI. Run the gates locally first (`ruff check`,
+  `ruff format --check`, `mypy`, and `pytest tests/ -m "not integration"`
+  — note the CI command does NOT exclude `package_smoke`).
+- Dependabot PRs always fail the integration workflows (no access to
+  OIDC secrets). That red is expected noise, not a broken gate — the
+  release path uses `secrets: inherit` and authenticates fine.
+
 ### CLI
 - Integration tests and the SaaS worker call the ENGINE directly — cli.py has
   no coverage from them. The 0.1.0 `--profile` shadowing bug (ReportProfile
