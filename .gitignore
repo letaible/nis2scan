@@ -52,7 +52,12 @@ config/*.local.yaml
 infra/**/.terraform/
 infra/**/*.tfstate
 infra/**/*.tfstate.*
-infra/**/.terraform.lock.hcl
+# .terraform.lock.hcl wird BEWUSST eingecheckt (seit 30.07.2026). Solange die
+# Locks ignoriert waren, loeste jeder CI-Lauf die Provider frisch gegen die
+# Registry auf — derselbe Commit ergab an zwei Tagen zwei Provider-Saetze.
+# Genau so brach azurerm 5.0.0 das Release-Gate von v0.2.0 ohne eine einzige
+# Code-Aenderung. tfstate bleibt ignoriert (enthaelt Geheimnisse), der Lock
+# enthaelt nur Versionen und Pruefsummen.
 
 # Integration test outputs
 tests/integration/tf_outputs.json

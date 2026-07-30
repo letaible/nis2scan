@@ -13,9 +13,16 @@
 terraform {
   required_version = ">= 1.0"
   required_providers {
+    # Obergrenzen wie in infra/aws/providers.tf (30.07.2026). Basis ist die
+    # Version, mit der dieser Stack zuletzt lief (Lock: aws 6.36.0, tls 4.2.1).
     aws = {
       source  = "hashicorp/aws"
-      version = ">= 4.0"
+      version = "~> 6.36"
+    }
+    # tls wurde genutzt, aber nicht deklariert.
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 4.2"
     }
   }
 }
@@ -105,8 +112,8 @@ data "aws_iam_policy_document" "ci_trust" {
 }
 
 resource "aws_iam_role" "nis2scan_ci" {
-  name               = "nis2scan-ci"
-  assume_role_policy = data.aws_iam_policy_document.ci_trust.json
+  name                 = "nis2scan-ci"
+  assume_role_policy   = data.aws_iam_policy_document.ci_trust.json
   max_session_duration = 3600
 
   tags = {

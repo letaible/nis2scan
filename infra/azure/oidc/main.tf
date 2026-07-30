@@ -19,13 +19,18 @@
 terraform {
   required_version = ">= 1.0"
   required_providers {
+    # Obergrenzen wie in infra/azure/providers.tf (30.07.2026). Basis ist die
+    # Version, mit der dieser Stack zuletzt lief (Lock: azurerm 4.65.0,
+    # azuread 3.8.0) — bewusst nicht die neuere des Test-Stacks, damit der
+    # naechste Apply auf den OIDC-Trust keine ungeplante Provider-Anhebung
+    # mitbringt.
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = ">= 3.80"
+      version = "~> 4.65"
     }
     azuread = {
       source  = "hashicorp/azuread"
-      version = ">= 2.47"
+      version = "~> 3.8"
     }
   }
 }

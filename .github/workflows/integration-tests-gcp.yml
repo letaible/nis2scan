@@ -64,6 +64,10 @@ jobs:
   # Release-Gate genauso schnell/günstig bleiben wie heute.
   determine-scenarios:
     name: Determine Scenario Matrix
+    # Siehe integration-tests-azure.yml: Dependabot-PRs bekommen keine
+    # Secrets, scheitern an der OIDC-Anmeldung und erzeugen nur rotes
+    # Rauschen. Bump vor dem Merge per workflow_dispatch testen.
+    if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     outputs:
       scenarios: ${{ steps.matrix.outputs.scenarios }}
@@ -160,7 +164,9 @@ jobs:
 
       - name: Terraform Init
         working-directory: infra/gcp
-        run: terraform init
+        # -lockfile=readonly (30.07.2026): siehe integration-tests-aws.yml.
+        # Nur Apply-Pfad, nicht Destroy.
+        run: terraform init -lockfile=readonly
 
       - name: Terraform Apply
         working-directory: infra/gcp

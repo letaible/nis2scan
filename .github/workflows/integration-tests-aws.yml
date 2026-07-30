@@ -61,6 +61,10 @@ jobs:
   # Release-Gate genauso schnell/günstig bleiben wie heute.
   determine-scenarios:
     name: Determine Scenario Matrix
+    # Siehe integration-tests-azure.yml: Dependabot-PRs bekommen keine
+    # Secrets, scheitern an der OIDC-Anmeldung und erzeugen nur rotes
+    # Rauschen. Bump vor dem Merge per workflow_dispatch testen.
+    if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     outputs:
       scenarios: ${{ steps.matrix.outputs.scenarios }}
@@ -120,7 +124,14 @@ jobs:
 
       - name: Terraform Init
         working-directory: infra/aws
-        run: terraform init
+        # -lockfile=readonly (30.07.2026): bricht LAUT ab, wenn Constraint und
+        # eingecheckte .terraform.lock.hcl auseinanderlaufen, statt still eine
+        # neue Providerversion zu ziehen. Bewusst NUR auf dem Apply-Pfad — der
+        # Destroy-Init unten laeuft ohne, sonst wuerde ein Lock-Formalfehler
+        # das Aufraeumen blockieren und kostenpflichtige Ressourcen stehen
+        # lassen. Providerwechsel gehen ueber `terraform init -upgrade` in
+        # einem eigenen PR mit gruenem Integrationslauf.
+        run: terraform init -lockfile=readonly
 
       - name: Terraform Apply
         working-directory: infra/aws

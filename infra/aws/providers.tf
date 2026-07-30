@@ -23,6 +23,12 @@ terraform {
       source  = "hashicorp/archive"
       version = "~> 2.8"
     }
+    # null wurde von Modulen genutzt, war aber nirgends deklariert und lief
+    # daher voellig ungedeckelt mit (aufgefallen beim Erzeugen der Locks).
+    null = {
+      source  = "hashicorp/null"
+      version = "~> 3.3"
+    }
   }
 }
 
