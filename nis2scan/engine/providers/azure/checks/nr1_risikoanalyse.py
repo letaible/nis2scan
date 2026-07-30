@@ -10,6 +10,7 @@ import structlog
 from nis2scan.engine.evidence import compliant_finding
 from nis2scan.engine.models.check import BaseCheck, CheckError, CheckResult
 from nis2scan.engine.models.finding import CloudProvider, Finding, Severity
+from nis2scan.engine.providers.azure.sdk_values import sdk_list
 
 logger = structlog.get_logger()
 
@@ -42,7 +43,9 @@ class CheckDefenderForCloud(BaseCheck):
                 from azure.mgmt.security import SecurityCenter
 
                 client = session.get_client(SecurityCenter, sub_id)
-                pricings = list(client.pricings.list())
+                # sdk_list, nicht list(): azure-mgmt-security 6.x liefert hier
+                # ein PricingList-Modell ohne __iter__ (siehe sdk_values.py).
+                pricings = sdk_list(client.pricings.list())
 
                 free_tier_plans = [p for p in pricings if p.pricing_tier == "Free"]
                 if pricings and not free_tier_plans:

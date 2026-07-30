@@ -54,7 +54,8 @@ jobs:
 
       - name: Terraform Init
         working-directory: infra/aws
-        run: terraform init
+        # -lockfile=readonly (30.07.2026): siehe integration-tests-aws.yml.
+        run: terraform init -lockfile=readonly
 
       # --- DESTROY: download state from previous apply ---
       - name: Download Terraform State from latest apply

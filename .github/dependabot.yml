@@ -1,9 +1,15 @@
-# Dependabot configuration (Batch R2-B).
+# Dependabot configuration (Batch R2-B, um Terraform erweitert 30.07.2026).
 #
-# Two ecosystems:
+# Drei Ökosysteme:
 # - pip: nis2scan's own runtime + dev dependencies (pyproject.toml).
 # - github-actions: the workflow files under .github/workflows/, so pinned
 #   action versions (checkout, setup-python, etc.) get bumped too.
+# - terraform: die Provider der Testinfrastruktur. Neu, weil azurerm 5.0.0 am
+#   30.07.2026 das Release-Gate von v0.2.0 brach, ohne dass jemand etwas
+#   geändert hatte. Seitdem sind die Constraints gedeckelt und die
+#   .terraform.lock.hcl eingecheckt — Dependabot macht den nächsten
+#   Provider-Sprung nun zu einem sichtbaren PR statt zu einer stillen
+#   Neuauflösung im nächsten CI-Lauf.
 #
 # Grouped weekly PRs keep the volume manageable given nis2scan's large
 # dependency surface (boto3, the full azure-mgmt-* and google-cloud-* stacks).
@@ -42,3 +48,21 @@ updates:
     labels:
       - "dependencies"
       - "github-actions"
+
+  # Ein Eintrag je Terraform-Wurzelmodul. Die oidc/- und roles/-Stacks sind
+  # bewusst NICHT dabei: sie laufen nicht in CI, halten Vladis Cloud-Trust und
+  # sollen sich nicht ungefragt bewegen.
+  - package-ecosystem: "terraform"
+    directories:
+      - "/infra/aws"
+      - "/infra/azure"
+      - "/infra/gcp"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "infra"
+    labels:
+      - "dependencies"
+      - "terraform"

@@ -12,9 +12,12 @@
 terraform {
   required_version = ">= 1.0"
   required_providers {
+    # Obergrenze wie in infra/aws/providers.tf (30.07.2026). Dieser Stack hat
+    # noch keinen Lock (nie appliziert); Basis ist deshalb dieselbe Major wie
+    # im OIDC-Stack desselben Kontos.
     aws = {
       source  = "hashicorp/aws"
-      version = ">= 5.0"
+      version = "~> 6.36"
     }
   }
 }

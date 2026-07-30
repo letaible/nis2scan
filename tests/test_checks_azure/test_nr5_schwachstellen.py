@@ -24,11 +24,41 @@ def _maengel(result):
     return [f for f in result.findings if f.status == FindingStatus.NON_COMPLIANT]
 
 
+class _PricingList:
+    """azure-mgmt-security 6.x returns this wrapper, not an iterable pager.
+
+    No ``__iter__`` on purpose: that is what made ``list(pricings.list())``
+    raise for every user of 0.2.0 while the list-based fixtures below stayed
+    green. Keep the shape, or this regression can return unnoticed.
+    """
+
+    def __init__(self, value):
+        self.value = value
+
+
 class TestCheckDefenderVulnAssessment:
     def _client(self, tier: str) -> MagicMock:
         client = MagicMock()
         client.pricings.list.return_value = [SimpleNamespace(name="VirtualMachines", pricing_tier=tier)]
         return client
+
+    def test_wrapper_model_response_is_evaluated_not_errored(self):
+        # Regression (30.07.2026): with the real SDK shape the check errored
+        # out entirely — no verdict at all. Worse, an empty read lands in the
+        # defect branch, so a silent fallback would invent a finding.
+        client = MagicMock()
+        response = _PricingList([SimpleNamespace(name="VirtualMachines", pricing_tier="Standard")])
+        # Prämissen-Guard: Wird die Fixture je zu einer Liste "vereinfacht",
+        # prüft dieser Test nichts mehr — dann soll er es sagen.
+        assert not hasattr(response, "__iter__")
+        client.pricings.list.return_value = response
+        session = FakeAzureSession({"SecurityCenter": client})
+
+        result = asyncio.run(CheckDefenderVulnAssessment().execute(session))
+
+        assert not result.errors, f"Check darf nicht fehlschlagen: {[e.message for e in result.errors]}"
+        assert len(_compliant(result)) == 1
+        assert not _maengel(result)
 
     def test_standard_tier_produces_positive_evidence(self):
         session = FakeAzureSession({"SecurityCenter": self._client("Standard")})

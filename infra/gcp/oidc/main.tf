@@ -1,13 +1,16 @@
 terraform {
   required_version = ">= 1.0"
   required_providers {
+    # Obergrenzen wie in infra/gcp/providers.tf (30.07.2026). Basis ist die
+    # Version, mit der dieser Stack zuletzt lief (Lock: google/google-beta
+    # 7.27.0).
     google = {
       source  = "hashicorp/google"
-      version = ">= 5.0"
+      version = "~> 7.27"
     }
     google-beta = {
       source  = "hashicorp/google-beta"
-      version = ">= 5.0"
+      version = "~> 7.27"
     }
   }
 }
@@ -93,8 +96,8 @@ locals {
     "roles/compute.viewer",
     "roles/container.clusterViewer",
     # --- Test infra (write) roles for CI Terraform ---
-    "roles/storage.admin",        # create/delete GCS buckets
-    "roles/cloudkms.admin",       # create/delete KMS keys
+    "roles/storage.admin",         # create/delete GCS buckets
+    "roles/cloudkms.admin",        # create/delete KMS keys
     "roles/compute.networkAdmin",  # create/delete VPC + firewall rules
     "roles/compute.securityAdmin", # manage firewall rules
   ]

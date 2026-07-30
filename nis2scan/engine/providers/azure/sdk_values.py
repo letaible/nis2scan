@@ -23,6 +23,8 @@ compared or looked up. They are correct under BOTH representations, so a
 future SDK upgrade cannot silently flip a compliance verdict.
 """
 
+from typing import Any
+
 
 def enum_value(value: object) -> str:
     """Canonical string of an SDK value (``"Premium"``), enum or plain str."""
@@ -32,3 +34,40 @@ def enum_value(value: object) -> str:
 def enum_value_lower(value: object) -> str:
     """Lowercased canonical string, for case-insensitive comparisons."""
     return enum_value(value).lower()
+
+
+def sdk_list(response: Any) -> list[Any]:
+    """Items of a list-style azure-mgmt response, pager OR wrapper model.
+
+    Why this exists (AZ-NR1-001/AZ-NR5-001, 30.07.2026): the same operation
+    returns different container shapes across azure-mgmt majors. In
+    azure-mgmt-security 6.x, ``pricings.list()`` returns a ``PricingList``
+    MODEL — it carries the items in ``.value`` and has no ``__iter__`` at all,
+    so ``list(...)`` raises ``TypeError: 'PricingList' object is not
+    iterable``. Other operations (and other majors) return an ``ItemPaged``
+    pager, which iterates but has no ``.value``.
+
+    That difference shipped to every user of 0.2.0: the dev environment had
+    azure-mgmt-security 7.0.0 installed while pyproject caps it at ``<7.0.0``,
+    so the code was only ever exercised against a version customers are
+    excluded from. Two checks errored out on every real scan.
+
+    Deliberately NOT fail-soft: an unexpected shape raises instead of
+    returning ``[]``. AZ-NR5-001 treats an empty list as "Defender for Servers
+    not enabled" and would report a defect that was never measured — a silent
+    empty fallback would manufacture findings out of a read failure
+    (ADR-0016). A raised error becomes a visible CheckError instead.
+    """
+    if hasattr(response, "value"):
+        # Wrapper model (PricingList & friends). An empty result set comes back
+        # as ``{"value": []}`` and is a real answer. ``value=None`` is NOT: the
+        # model declares the field required, so None means the response broke
+        # its own contract — surface that instead of guessing "nothing found"
+        # (ADR-0016; legal review 31.07.2026, recommendation a).
+        if response.value is None:
+            raise ValueError(
+                f"{type(response).__name__}.value ist None — die Antwort verletzt ihren eigenen "
+                "Vertrag; ein leeres Ergebnis käme als leere Liste zurück."
+            )
+        return list(response.value)
+    return list(response)  # pager; raises TypeError on any other shape

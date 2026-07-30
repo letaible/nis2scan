@@ -11,6 +11,7 @@ import structlog
 from nis2scan.engine.evidence import compliant_finding
 from nis2scan.engine.models.check import BaseCheck, CheckError, CheckResult
 from nis2scan.engine.models.finding import CloudProvider, Finding, Severity
+from nis2scan.engine.providers.azure.sdk_values import sdk_list
 
 logger = structlog.get_logger()
 
@@ -60,7 +61,9 @@ class CheckDefenderVulnAssessment(BaseCheck):
                 from azure.mgmt.security import SecurityCenter
 
                 security_client = session.get_client(SecurityCenter, sub_id)
-                pricings = list(security_client.pricings.list())
+                # sdk_list, nicht list(): azure-mgmt-security 6.x liefert hier
+                # ein PricingList-Modell ohne __iter__ (siehe sdk_values.py).
+                pricings = sdk_list(security_client.pricings.list())
 
                 # Check if VirtualMachines plan is enabled (required for VA)
                 vm_plan = next((p for p in pricings if p.name == "VirtualMachines"), None)
