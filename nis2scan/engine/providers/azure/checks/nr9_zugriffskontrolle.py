@@ -12,6 +12,7 @@ import structlog
 from nis2scan.engine.evidence import compliant_finding
 from nis2scan.engine.models.check import BaseCheck, CheckError, CheckResult
 from nis2scan.engine.models.finding import CloudProvider, Finding, Severity
+from nis2scan.engine.providers.azure.sdk_values import enum_value_lower
 
 logger = structlog.get_logger()
 
@@ -27,18 +28,8 @@ OPEN_SOURCE_PREFIXES = {"*", "0.0.0.0/0", "Internet", "0.0.0.0", "<nw>/0"}
 MAX_INACTIVE_DAYS = 90
 
 
-def _enum_value_lower(value: object) -> str:
-    """Normalize an azure-mgmt enum OR plain string to a lowercase string.
-
-    False-negative fix (real-ARM-verified 28.07.2026): azure-mgmt-network 30.x
-    returns rule.direction/rule.access as CaseInsensitiveEnumMeta enums whose
-    ``str()`` yields ``"SecurityRuleDirection.INBOUND"``, NOT ``"Inbound"``. The
-    previous ``str(rule.direction).lower() == "inbound"`` therefore never matched
-    a real inbound rule — an open SSH port from "*" was silently reported as
-    compliant. Prefer the enum's ``.value`` ("Inbound"); fall back to the object
-    itself when it is already a plain string.
-    """
-    return str(getattr(value, "value", value)).lower()
+# Shared SDK-value helpers live in azure/sdk_values.py (AZ-NR9-003 precedent).
+_enum_value_lower = enum_value_lower
 
 
 class CheckConditionalAccess(BaseCheck):
@@ -436,12 +427,12 @@ class CheckStoragePublicAccess(BaseCheck):
                 public_accounts = []
                 for account in accounts:
                     is_public = False
-                    public_access = str(account.public_network_access or "Enabled")
-                    default_action = "Allow"
+                    public_access = enum_value_lower(account.public_network_access or "Enabled")
+                    default_action = "allow"
                     if account.network_rule_set:
-                        default_action = str(account.network_rule_set.default_action or "Allow")
+                        default_action = enum_value_lower(account.network_rule_set.default_action or "Allow")
 
-                    if public_access.lower() == "enabled" and default_action.lower() == "allow":
+                    if public_access == "enabled" and default_action == "allow":
                         is_public = True
 
                     if is_public:

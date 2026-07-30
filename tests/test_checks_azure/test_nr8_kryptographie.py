@@ -1,6 +1,7 @@
 """Tests for §30 Nr. 8 — Kryptographie Azure checks incl. positive evidence (ADR-0006)."""
 
 import asyncio
+from enum import Enum
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -110,6 +111,29 @@ class TestCheckSqlTde:
         ]
         client.transparent_data_encryptions.get.return_value = SimpleNamespace(state=tde_state)
         return client
+
+    def test_enum_valued_tde_state_is_read_correctly(self):
+        """Auflage 1 (Rechts-Review 30.07.2026): the real SDK may return
+        tde.state as a (str, Enum) member whose str() is "TdeState.ENABLED".
+        Without enum_value_lower the enabled state would read as a defect and
+        the disabled state would never be flagged. StrEnum is deliberately NOT
+        used — it would return the plain value and not reproduce the trap."""
+
+        class _TdeState(str, Enum):  # noqa: UP042
+            ENABLED = "Enabled"
+            DISABLED = "Disabled"
+
+        session = FakeAzureSession({"SqlManagementClient": self._client(_TdeState.ENABLED)})
+        result = asyncio.run(CheckSqlTde().execute(session))
+        assert len(_compliant(result)) == 1, f"enum-valued enabled TDE misread: {result.findings}"
+        assert not _maengel(result)
+        # The report must show the canonical value, never "TdeState.ENABLED".
+        assert _compliant(result)[0].current_state["tde_state"] == "Enabled"
+
+        session = FakeAzureSession({"SqlManagementClient": self._client(_TdeState.DISABLED)})
+        result = asyncio.run(CheckSqlTde().execute(session))
+        assert len(_maengel(result)) == 1, f"enum-valued disabled TDE not flagged: {result.findings}"
+        assert not _compliant(result)
 
     def test_tde_enabled_produces_positive_evidence(self):
         session = FakeAzureSession({"SqlManagementClient": self._client("Enabled")})
@@ -320,6 +344,26 @@ class TestCheckAppGatewayTls:
         ]
         return client
 
+    def test_enum_valued_min_protocol_version_tls10_is_flagged(self):
+        """Auflage 3 (Rechts-Review 30.07.2026): the DIRECT min_protocol_version
+        path is the silent-failure variant. Under enum drift str() yields the
+        member NAME ("ApplicationGatewaySslProtocol.TLS_V1_0", underscores), so
+        the "TLSv1_0" substring test misses and a gateway still on TLS 1.0
+        would be declared compliant — a false negative in the dangerous
+        direction, unlike the predefined path which fails loudly."""
+
+        class _SslProtocol(str, Enum):  # noqa: UP042
+            TLS_V1_0 = "TLSv1_0"
+
+        session = FakeAzureSession({"NetworkManagementClient": self._client(_SslProtocol.TLS_V1_0)})
+
+        result = asyncio.run(CheckAppGatewayTls().execute(session))
+
+        assert len(_maengel(result)) == 1, f"enum-valued TLS 1.0 gateway not flagged: {result.findings}"
+        assert not _compliant(result)
+        # The report must carry the canonical value, not the member name.
+        assert _maengel(result)[0].current_state["min_protocol_version"] == "TLSv1_0"
+
     def _client_predefined(self, policy_name: str) -> MagicMock:
         client = MagicMock()
         client.application_gateways.list_all.return_value = [
@@ -335,6 +379,31 @@ class TestCheckAppGatewayTls:
             ),
         ]
         return client
+
+    def test_enum_valued_predefined_policy_is_resolved(self):
+        """Auflage 2 (Rechts-Review 30.07.2026): policy_type/policy_name may
+        arrive as (str, Enum) members. With a raw str() the type check would
+        fail and the predefined-policy TLS lookup would miss, turning a
+        resolvable policy into an unverifiable one."""
+
+        class _PolicyType(str, Enum):  # noqa: UP042
+            PREDEFINED = "Predefined"
+
+        class _PolicyName(str, Enum):  # noqa: UP042
+            OLD = "AppGwSslPolicy20150501"
+
+        client = self._client_predefined(_PolicyName.OLD)
+        client.application_gateways.list_all.return_value[0].ssl_policy.policy_type = _PolicyType.PREDEFINED
+        session = FakeAzureSession({"NetworkManagementClient": client})
+
+        result = asyncio.run(CheckAppGatewayTls().execute(session))
+
+        # AppGwSslPolicy20150501 maps to TLSv1_0 -> must be flagged, and the
+        # policy must NOT end up as an unresolvable/unverifiable state.
+        assert len(_maengel(result)) == 1, (
+            f"enum-valued predefined policy not resolved: {result.findings}, {result.errors}"
+        )
+        assert not any("UnverifiableState" in (e.error_type or "") for e in result.errors)
 
     def test_tls12_produces_positive_evidence(self):
         session = FakeAzureSession({"NetworkManagementClient": self._client("TLSv1_2")})

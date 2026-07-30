@@ -567,3 +567,47 @@ Verlaufsabschnitte (Batches Nr. 4–10) und der Kampagnen-Bilanz.
   gleiches str(enum)-Muster in weiteren Checks → Task #58 (Enum-Sweep).
 - **Gründer-Vermerk: ERTEILT (Chat-Freigabe 28.07.2026 „Vermerk
   erteilt").** Beide Vermerke liegen vor — Merge frei.
+
+#### Review Enum-Härtung Azure (Task #58, Sweep-Ergebnis) (2026-07-30)
+
+- Gegenstand (Branch `fix/azure-enum-haertung`, 3 Commits): Systematischer
+  Sweep der am 28.07. bei AZ-NR9-003 entdeckten Falsch-Negativ-Klasse
+  (SDK-Wert per `str()` gewrappt, dann verglichen) über alle Azure- und
+  GCP-Checks. Ergebnis: GCP vollständig sauber, alle Gleichheitsvergleiche
+  sicher. Neu: zentraler Helper `azure/sdk_values.py` (`enum_value`,
+  `enum_value_lower`), 5 latente Drift-Stellen gehärtet, Regressionstests
+  in echter SDK-Enum-Form (kein Mock-Drift). Die Prämisse ist belegt, nicht
+  angenommen: `Registry.sku.name` (azure-mgmt-containerregistry) liefert
+  live `SkuName.PREMIUM`. Klarstellung im Docstring: `str()` auf einem
+  `(str, Enum)`-Member lieferte SCHON IMMER die qualifizierte Form — keine
+  Python-3.11-Regression (3.11 änderte nur `format()`/f-Strings), das
+  Risiko ist also älter und breiter als ein einzelnes Interpreter-Upgrade.
+- **Zweitprüfung (legal-reviewer): FAIL (2 Auflagen) → FAIL (Auflage 3)
+  → Nachprüfung PASS.** Der Verlauf ist der eigentliche Ertrag dieser
+  Runde: Die dritte Runde legte einen ECHTEN, bis dahin unentdeckten
+  stillen Falsch-Negativ-Pfad offen, den der Sweep selbst übersehen hatte
+  — `nr8_kryptographie.py:784` (AZ-NR8-006) wrappte die TLS-Mindestversion
+  per `str()` und prüfte dann per Substring (`"TLSv1_0" not in ...`).
+  Unter Enum-Drift liefert `str()` den Member-NAMEN `TLS_V1_0` (Unterstrich
+  statt Punkt-Notation im Wert), der Substring matcht nicht → ein
+  Application Gateway auf TLS 1.0 wäre in den Compliant-Zweig gelaufen.
+  Gefährliche Fehlerrichtung, direkt neben einer bereits gehärteten Stelle.
+  Fix (`enum_value`) + Regressionstest + Gegenprobe (ohne Fix rot) sind
+  umgesetzt; der Reviewer hat den rot→grün-Mechanismus strukturell selbst
+  nachvollzogen, nicht die Behauptung übernommen.
+- **Methodischer Lerneffekt (verbindlich für künftige Sweeps):** Der Sweep
+  suchte ausschließlich nach GLEICHHEITSVERGLEICHEN. Die Muster
+  `str(x)` + Substring-Test und `str(x)` + `split()`/`int()` waren nicht im
+  Suchraster, obwohl sie dieselbe Fehlerklasse tragen. Künftige Sweeps
+  dieser Art müssen alle drei Muster abdecken. In Task #58 dokumentiert.
+- Nicht sperrende Resthinweise (außerhalb des PR-Scopes, für den nächsten
+  Touch vorgemerkt): H5 `nr8_kryptographie.py:545` (AZ-NR8-005,
+  `str(...).split(".")` — Fehlerrichtung LAUT, damit ADR-0016-konform);
+  H6 `nr9_zugriffskontrolle.py:540` (AZ-NR9-005 — Drift dort unplausibel,
+  Check wird ohnehin in Task #50 neu gebaut).
+- CI-Gates am 30.07.2026 auf dem Branch verifiziert: pytest (Unit) grün,
+  `ruff check`/`ruff format --check` sauber, `mypy` ohne Befund. Der
+  Reviewer hat die Gates ausdrücklich NICHT selbst ausgeführt; seine
+  Feststellung stützt sich auf die strukturelle Verifikation.
+- **Gründer-Vermerk: ERTEILT (Chat-Freigabe 30.07.2026 „Vermerk
+  erteilt").** Beide Vermerke liegen vor — Merge frei.

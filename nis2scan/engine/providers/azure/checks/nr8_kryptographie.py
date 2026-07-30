@@ -11,6 +11,7 @@ import structlog
 from nis2scan.engine.evidence import compliant_finding
 from nis2scan.engine.models.check import BaseCheck, CheckError, CheckResult
 from nis2scan.engine.models.finding import CloudProvider, Finding, Severity
+from nis2scan.engine.providers.azure.sdk_values import enum_value, enum_value_lower
 
 logger = structlog.get_logger()
 
@@ -259,7 +260,7 @@ class CheckSqlTde(BaseCheck):
                             continue
                         try:
                             tde = sql_client.transparent_data_encryptions.get(rg_name, server.name, db.name, "current")
-                            if tde.state and str(tde.state).lower() == "enabled":
+                            if tde.state and enum_value_lower(tde.state) == "enabled":
                                 findings.append(
                                     compliant_finding(
                                         self,
@@ -273,7 +274,7 @@ class CheckSqlTde(BaseCheck):
                                         resource_type="Microsoft.Sql/servers/databases",
                                         account_id=sub_id,
                                         current_state={
-                                            "tde_state": str(tde.state),
+                                            "tde_state": enum_value(tde.state),
                                             # server.name is interpolated into the
                                             # description above; resource_id's tail is
                                             # only the database name. Suffix key
@@ -282,11 +283,13 @@ class CheckSqlTde(BaseCheck):
                                             "server_name": server.name,
                                         },
                                         expected_state="TDE aktiviert für alle Datenbanken",
-                                        audit_evidence=f"transparent_data_encryptions.get(): state={tde.state}",
+                                        audit_evidence=(
+                                            f"transparent_data_encryptions.get(): state={enum_value(tde.state)}"
+                                        ),
                                         iso27001_control="A.8.24 Verwendung von Kryptographie",
                                     )
                                 )
-                            elif tde.state and str(tde.state).lower() != "enabled":
+                            elif tde.state and enum_value_lower(tde.state) != "enabled":
                                 findings.append(
                                     Finding(
                                         check_id=self.check_id,
@@ -306,7 +309,7 @@ class CheckSqlTde(BaseCheck):
                                         resource_type="Microsoft.Sql/servers/databases",
                                         account_id=sub_id,
                                         current_state={
-                                            "tde_state": str(tde.state),
+                                            "tde_state": enum_value(tde.state),
                                             # server.name (description) and rg_name
                                             # (remediation az-CLI command) are both
                                             # freestanding tokens, not covered by
@@ -323,7 +326,9 @@ class CheckSqlTde(BaseCheck):
                                             f"--database {db.name} --status Enabled"
                                         ),
                                         remediation_effort="LOW",
-                                        audit_evidence=f"transparent_data_encryptions.get(): state={tde.state}",
+                                        audit_evidence=(
+                                            f"transparent_data_encryptions.get(): state={enum_value(tde.state)}"
+                                        ),
                                     )
                                 )
                             else:
@@ -753,8 +758,10 @@ class CheckAppGatewayTls(BaseCheck):
                         continue
 
                     min_version = ssl_policy.min_protocol_version
-                    if not min_version and str(getattr(ssl_policy, "policy_type", "")) == "Predefined":
-                        min_version = self.PREDEFINED_POLICY_MIN_TLS.get(str(getattr(ssl_policy, "policy_name", "")))
+                    if not min_version and enum_value(getattr(ssl_policy, "policy_type", "")) == "Predefined":
+                        min_version = self.PREDEFINED_POLICY_MIN_TLS.get(
+                            enum_value(getattr(ssl_policy, "policy_name", ""))
+                        )
 
                     if not min_version:
                         errors.append(
@@ -767,7 +774,14 @@ class CheckAppGatewayTls(BaseCheck):
                         )
                         continue
 
-                    min_version = str(min_version)
+                    # Silent-false-negative fix (legal review 30.07.2026, Auflage 3):
+                    # a raw str() here is the dangerous variant of the AZ-NR9-003
+                    # class. Under enum drift str(ApplicationGatewaySslProtocol
+                    # .TLS_V1_0) yields the member NAME ("...TLS_V1_0"), so the
+                    # "TLSv1_0" substring below would NOT match and a gateway
+                    # still on TLS 1.0 would fall into the compliant branch.
+                    # No-op for the predefined-policy path (plain str literals).
+                    min_version = enum_value(min_version)
                     if "TLSv1_0" not in min_version and "TLSv1_1" not in min_version:
                         findings.append(
                             compliant_finding(
