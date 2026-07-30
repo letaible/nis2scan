@@ -609,4 +609,5 @@ Verlaufsabschnitte (Batches Nr. 4–10) und der Kampagnen-Bilanz.
   `ruff check`/`ruff format --check` sauber, `mypy` ohne Befund. Der
   Reviewer hat die Gates ausdrücklich NICHT selbst ausgeführt; seine
   Feststellung stützt sich auf die strukturelle Verifikation.
-- **Gründer-Vermerk: AUSSTEHEND.** Kein Merge, bis er vorliegt.
+- **Gründer-Vermerk: ERTEILT (Chat-Freigabe 30.07.2026 „Vermerk
+  erteilt").** Beide Vermerke liegen vor — Merge frei.
