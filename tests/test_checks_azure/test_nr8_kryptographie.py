@@ -344,6 +344,26 @@ class TestCheckAppGatewayTls:
         ]
         return client
 
+    def test_enum_valued_min_protocol_version_tls10_is_flagged(self):
+        """Auflage 3 (Rechts-Review 30.07.2026): the DIRECT min_protocol_version
+        path is the silent-failure variant. Under enum drift str() yields the
+        member NAME ("ApplicationGatewaySslProtocol.TLS_V1_0", underscores), so
+        the "TLSv1_0" substring test misses and a gateway still on TLS 1.0
+        would be declared compliant — a false negative in the dangerous
+        direction, unlike the predefined path which fails loudly."""
+
+        class _SslProtocol(str, Enum):  # noqa: UP042
+            TLS_V1_0 = "TLSv1_0"
+
+        session = FakeAzureSession({"NetworkManagementClient": self._client(_SslProtocol.TLS_V1_0)})
+
+        result = asyncio.run(CheckAppGatewayTls().execute(session))
+
+        assert len(_maengel(result)) == 1, f"enum-valued TLS 1.0 gateway not flagged: {result.findings}"
+        assert not _compliant(result)
+        # The report must carry the canonical value, not the member name.
+        assert _maengel(result)[0].current_state["min_protocol_version"] == "TLSv1_0"
+
     def _client_predefined(self, policy_name: str) -> MagicMock:
         client = MagicMock()
         client.application_gateways.list_all.return_value = [

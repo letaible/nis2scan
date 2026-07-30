@@ -774,7 +774,14 @@ class CheckAppGatewayTls(BaseCheck):
                         )
                         continue
 
-                    min_version = str(min_version)
+                    # Silent-false-negative fix (legal review 30.07.2026, Auflage 3):
+                    # a raw str() here is the dangerous variant of the AZ-NR9-003
+                    # class. Under enum drift str(ApplicationGatewaySslProtocol
+                    # .TLS_V1_0) yields the member NAME ("...TLS_V1_0"), so the
+                    # "TLSv1_0" substring below would NOT match and a gateway
+                    # still on TLS 1.0 would fall into the compliant branch.
+                    # No-op for the predefined-policy path (plain str literals).
+                    min_version = enum_value(min_version)
                     if "TLSv1_0" not in min_version and "TLSv1_1" not in min_version:
                         findings.append(
                             compliant_finding(
